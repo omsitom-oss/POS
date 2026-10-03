@@ -29,7 +29,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             JOIN dbo.Currencies c ON c.CurrencyId=p.CurrencyId
             WHERE p.Status=N'POSTED' AND NOT {IsImport} AND (@branch IS NULL OR p.BranchId=@branch)
               AND (@from IS NULL OR p.PurchaseDate>=@from) AND (@to IS NULL OR p.PurchaseDate<=@to)
-              AND EXISTS (SELECT 1 FROM dbo.PurchaseLines l WHERE l.PurchaseId=p.PurchaseId AND l.Quantity>{ReservedPerLine})
+              AND EXISTS (SELECT 1 FROM dbo.PurchaseLines l WHERE l.PurchaseId=p.PurchaseId AND l.Quantity>{ReservedPerLine}+{DisposedPerLine} AND {ItemAvailable}>0)
               AND (@search IS NULL OR p.InvoiceNo LIKE @search OR partner.PartnerName LIKE @search
                    OR EXISTS (SELECT 1 FROM dbo.PurchaseLines l JOIN dbo.Items i ON i.ItemId=l.ItemId WHERE l.PurchaseId=p.PurchaseId AND (i.NameEn LIKE @search OR i.NameAr LIKE @search OR i.ItemCode LIKE @search OR l.BatchNo LIKE @search)))
             ORDER BY p.PurchaseDate DESC,p.PurchaseId DESC
@@ -204,16 +204,19 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             }
             Match(source, lines);
 
+            // The return is dated the day it is approved, so the ledger and the reports put it in the same period.
+            var postedOn = DateTime.UtcNow.Date;
             await using (var update = db.CreateCommand())
             {
                 update.Transaction = tx;
-                update.CommandText = "UPDATE dbo.PurchaseReturns SET Status=N'POSTED',ReviewedBy=@reviewer,ReviewedAt=SYSUTCDATETIME(),ReviewNote=@note WHERE PurchaseReturnId=@id";
+                update.CommandText = "UPDATE dbo.PurchaseReturns SET Status=N'POSTED',ReturnDate=@date,ReviewedBy=@reviewer,ReviewedAt=SYSUTCDATETIME(),ReviewNote=@note WHERE PurchaseReturnId=@id";
+                Add(update, "@date", postedOn, DbType.Date);
                 Add(update, "@reviewer", reviewerId, DbType.Int32);
                 Add(update, "@note", string.IsNullOrWhiteSpace(note) ? null : note.Trim(), DbType.String);
                 Add(update, "@id", returnId, DbType.Int64);
                 await update.ExecuteNonQueryAsync(ct);
             }
-            await PostAsync(db, tx, returnId, returnNo, source, total, DateTime.UtcNow.Date, reviewerId, ct);
+            await PostAsync(db, tx, returnId, returnNo, source, total, postedOn, reviewerId, ct);
             await tx.CommitAsync(ct);
         }
         catch (TransactionException ex)

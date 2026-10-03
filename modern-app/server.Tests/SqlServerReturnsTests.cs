@@ -133,6 +133,8 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
         var id = pending.GetProperty("purchaseReturnId").GetInt64();
         Assert.Equal(HttpStatusCode.Forbidden, (await clerk.PostAsJsonAsync($"/api/purchase-returns/{id}/approve", new { }, Ct)).StatusCode);
 
+        // Requested on an earlier day: once approved, the return and its journal both carry the approval date.
+        await fixture.Database.ExecuteAsync($"UPDATE dbo.PurchaseReturns SET ReturnDate=DATEADD(day,-3,ReturnDate) WHERE PurchaseReturnId={id}", "backdate return", Ct);
         var approved = await Admin.PostAsJsonAsync($"/api/purchase-returns/{id}/approve", new { note = "Supplier agreed" }, Ct);
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
         Assert.Equal("POSTED", (await approved.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("status").GetString());
@@ -140,6 +142,7 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
         Assert.Equal(14m, await fixture.Database.ScalarAsync<decimal>($"SELECT Debit FROM dbo.Transactions WHERE RefNo=N'{returnNo}' AND AccountId=N'2100' AND PartnerId={refs.Supplier}", Ct));
         Assert.Equal(14m, await fixture.Database.ScalarAsync<decimal>($"SELECT Credit FROM dbo.Transactions WHERE RefNo=N'{returnNo}' AND AccountId=N'1300'", Ct));
         Assert.Equal(supplierBefore + 14m, await SupplierBalanceAsync(refs));
+        Assert.Equal(0, await fixture.Database.CountAsync($"SELECT COUNT(*) FROM dbo.Transactions t JOIN dbo.PurchaseReturns r ON r.ReturnNo=t.RefNo WHERE t.RefNo=N'{returnNo}' AND (t.TransactionDate<>r.ReturnDate OR r.ReturnDate<>CONVERT(date,SYSUTCDATETIME()))", Ct));
         Assert.Equal(HttpStatusCode.BadRequest, (await Admin.PostAsJsonAsync($"/api/purchase-returns/{id}/approve", new { }, Ct)).StatusCode);
         var batches = await Admin.GetFromJsonAsync<JsonElement[]>($"/api/inventory/{x}/batches", Ct);
         Assert.Equal(7m, batches!.Single().GetProperty("availableQuantity").GetDecimal());
@@ -158,6 +161,10 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
         var response = await Admin.PostAsJsonAsync("/api/purchase-returns", new { purchaseId = purchase, lines = new[] { new { lineId = line.GetProperty("purchaseLineId").GetInt64(), quantity = 2m } } }, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("in stock", await response.Content.ReadAsStringAsync(Ct));
+
+        // Once the rest is sold too, the invoice drops out of the picker.
+        await SellAsync(refs, 0, (x, 1, 8m));
+        Assert.DoesNotContain(await Admin.GetFromJsonAsync<JsonElement[]>("/api/purchase-returns/invoices", Ct) ?? [], row => row.GetProperty("invoiceId").GetInt64() == purchase);
     }
 
     [Fact]
