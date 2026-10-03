@@ -80,6 +80,8 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
         { "POST", "/api/branches" }, { "POST", "/api/treasuries" }, { "POST", "/api/banks" }, { "PUT", "/api/approvals/INVENTORY_DISPOSAL" },
         { "POST", "/api/items" }, { "PUT", "/api/items/1" }, { "POST", "/api/partners" },
         { "GET", "/api/sales" }, { "POST", "/api/sales" },
+        { "GET", "/api/sales-returns" }, { "GET", "/api/sales-returns/1" }, { "GET", "/api/sales-returns/invoices" }, { "GET", "/api/sales-returns/invoices/1" }, { "POST", "/api/sales-returns" },
+        { "GET", "/api/purchase-returns" }, { "GET", "/api/purchase-returns/invoices/1" }, { "POST", "/api/purchase-returns" }, { "POST", "/api/purchase-returns/1/approve" }, { "POST", "/api/purchase-returns/1/reject" },
         { "GET", "/api/purchases" }, { "GET", "/api/purchases/1" }, { "POST", "/api/purchases" }, { "DELETE", "/api/purchases/1" },
         { "GET", "/api/inventory" }, { "POST", "/api/inventory/disposals" }, { "POST", "/api/inventory/requests/1/approve" },
         { "GET", "/api/receipts" }, { "POST", "/api/receipts" }, { "GET", "/api/expenses" }, { "POST", "/api/expenses" },
@@ -118,6 +120,10 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
 
     [Theory]
     [InlineData("GET", "/api/sales?branchId=2")]
+    [InlineData("GET", "/api/sales-returns?branchId=2")]
+    [InlineData("GET", "/api/sales-returns/invoices?branchId=2")]
+    [InlineData("GET", "/api/purchase-returns?branchId=2")]
+    [InlineData("GET", "/api/purchase-returns/invoices?branchId=2")]
     [InlineData("GET", "/api/purchases?branchId=2")]
     [InlineData("GET", "/api/receipts?branchId=2")]
     [InlineData("GET", "/api/expenses?branchId=2")]
