@@ -125,6 +125,7 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
     [InlineData("GET", "/api/reports/summary?branchId=2")]
     [InlineData("GET", "/api/accounts/chart?branchId=2")]
     [InlineData("GET", "/api/transactions/treasury/1?branchId=2")]
+    [InlineData("GET", "/api/treasuries?branchId=2")]
     public async Task Reading_another_branch_needs_all_branches(string method, string path)
     {
         var client = authFactory.CreateClientAs(userId: 5, branchId: 1, permissions: PermissionCodes.All.Where(code => code != PermissionCodes.AllBranches));
@@ -139,6 +140,7 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
         { "/api/receipts", new { type = "RECEIPT", partnerId = 1, treasuryId = 1, amount = 1, exchangeRate = 1, branchId = 2 } },
         { "/api/expenses", new { expenseAccountId = "6100", treasuryId = 1, amount = 1, branchId = 2 } },
         { "/api/treasury-transfers", new { sourceTreasuryId = 1, destinationTreasuryId = 2, sourceAmount = 1, destinationAmount = 1, exchangeRate = 1, branchId = 2 } },
+        { "/api/treasuries", new { nameAr = "x", nameEn = "x", treasureType = "CASH", currencyId = 1, branchId = 2 } },
         { "/api/inventory/disposals", new { itemId = 1, purchaseLineId = 1, quantity = 1, reason = "expired", branchId = 2 } },
     };
 

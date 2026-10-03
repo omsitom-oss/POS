@@ -144,6 +144,12 @@ public sealed class SqlServerMigrationTests
             return Convert.ToInt32(await command.ExecuteScalarAsync(ct));
         }
 
+        public async Task<T?> ScalarAsync<T>(string sql, CancellationToken ct)
+        {
+            await using var command = new SqlCommand(sql, connection);
+            return await command.ExecuteScalarAsync(ct) is T value ? value : default;
+        }
+
         public async ValueTask DisposeAsync()
         {
             await connection.DisposeAsync();

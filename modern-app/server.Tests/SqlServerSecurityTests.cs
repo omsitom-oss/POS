@@ -7,6 +7,7 @@ using ElitePos.LocalService.Data.Pos;
 using ElitePos.LocalService.Security;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,6 +25,10 @@ public sealed class SqlServerApiFixture : IAsyncLifetime
     public string AdminToken { get; private set; } = "";
     public int BranchA { get; private set; }
     public int BranchB { get; private set; }
+    public int TreasuryA { get; private set; }
+    public int TreasuryB { get; private set; }
+    public string? ExpenseAccount { get; private set; }
+    public int CurrencyId { get; private set; }
 
     public async ValueTask InitializeAsync()
     {
@@ -48,6 +53,7 @@ public sealed class SqlServerApiFixture : IAsyncLifetime
             DECLARE @partner int = (SELECT TOP 1 PartnerId FROM dbo.Partners);
             INSERT dbo.Treasuries(TreasuryCode,NameAr,NameEn,CurrencyId,BranchId) VALUES(N'T-SEC',N'خزنة',N'Treasury',@currency,@a);
             DECLARE @treasury int = SCOPE_IDENTITY();
+            INSERT dbo.Treasuries(TreasuryCode,NameAr,NameEn,CurrencyId,BranchId) VALUES(N'T-SEC-B',N'خزنة ب',N'Treasury B',@currency,@b);
             INSERT dbo.Purchases(BranchId,SupplierPartnerId,InvoiceNo,PurchaseDate,CurrencyId,Status,Total) VALUES
                 (@a,@partner,N'PO-A',CAST(SYSUTCDATETIME() AS date),@currency,N'POSTED',100),(@b,@partner,N'PO-B',CAST(SYSUTCDATETIME() AS date),@currency,N'POSTED',250);
             INSERT dbo.Sales(BranchId,SaleNo,SaleDate,TreasuryId,CurrencyId,Status,Total) VALUES
@@ -55,6 +61,10 @@ public sealed class SqlServerApiFixture : IAsyncLifetime
             """, "seed", ct);
         BranchA = await database.CountAsync("SELECT MIN(BranchId) FROM dbo.Branches", ct);
         BranchB = await database.CountAsync("SELECT MAX(BranchId) FROM dbo.Branches", ct);
+        TreasuryA = await database.CountAsync("SELECT TreasuryId FROM dbo.Treasuries WHERE TreasuryCode=N'T-SEC'", ct);
+        TreasuryB = await database.CountAsync("SELECT TreasuryId FROM dbo.Treasuries WHERE TreasuryCode=N'T-SEC-B'", ct);
+        CurrencyId = await database.CountAsync("SELECT CurrencyId FROM dbo.Currencies WHERE CurrencyCode=N'TST'", ct);
+        ExpenseAccount = await database.ScalarAsync<string>("SELECT TOP 1 AccountCode FROM dbo.Accounts WHERE AccountType='EXPENSE' AND IsActive=1 ORDER BY AccountCode", ct);
 
         var connectionString = database.ConnectionString;
         Api = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -63,6 +73,8 @@ public sealed class SqlServerApiFixture : IAsyncLifetime
             builder.UseSetting("Database:Provider", "SqlServer");
             builder.UseSetting("ConnectionStrings:POS", connectionString);
             builder.UseSetting("Auth:MaxFailedLogins", MaxFailedLogins.ToString());
+            // The test container signs in with a SQL login, which the app refuses unless this allowance is registered.
+            builder.ConfigureTestServices(services => services.AddSingleton(new SqlCredentialsTestAllowance()));
         });
         // The bootstrap admin signs in with its one-time password, which only allows replacing it.
         var oneTime = await new AdminBootstrap(Api.Services.GetRequiredService<DbConnectionFactory>()).CreateAsync("admin", ct);
@@ -160,8 +172,9 @@ public sealed class SqlServerSecurityTests(SqlServerApiFixture fixture) : IClass
         var (_, userId, password) = await UserAsync("lockout-user", fixture.BranchA);
         for (var attempt = 1; attempt < SqlServerApiFixture.MaxFailedLogins; attempt++)
             Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync("lockout-user", "wrong")).Status);
-        Assert.Equal(HttpStatusCode.TooManyRequests, (await LoginAsync("lockout-user", "wrong")).Status);
-        Assert.Equal(HttpStatusCode.TooManyRequests, (await LoginAsync("lockout-user", password)).Status);
+        // Locked: even the right password is refused, with the same answer as a wrong one.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync("lockout-user", "wrong")).Status);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await LoginAsync("lockout-user", password)).Status);
 
         var admin = await AdminAsync();
         var reset = await (await admin.PostAsync($"/api/users/{userId}/reset-password", null, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
@@ -225,6 +238,31 @@ public sealed class SqlServerSecurityTests(SqlServerApiFixture fixture) : IClass
         Assert.Equal(30m, all.GetProperty("salesTotal").GetDecimal());
         var branchB = await admin.GetFromJsonAsync<JsonElement>($"/api/reports/summary?branchId={fixture.BranchB}", Ct);
         Assert.Equal(250m, branchB.GetProperty("purchasesTotal").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Treasuries_of_another_branch_cannot_be_used_or_seen()
+    {
+        SkipWithoutSqlServer();
+        var (client, _, _) = await UserAsync("branch-b-cashier", fixture.BranchB, PermissionCodes.TreasuryManage, PermissionCodes.TreasuryView);
+        var treasuries = await client.GetFromJsonAsync<JsonElement[]>("/api/treasuries", Ct);
+        Assert.Equal([fixture.TreasuryB], treasuries!.Select(t => t.GetProperty("treasuryId").GetInt32()));
+        var branches = await client.GetFromJsonAsync<JsonElement[]>("/api/branches", Ct);
+        Assert.Equal([fixture.BranchB], branches!.Select(b => b.GetProperty("branchId").GetInt32()));
+
+        var transfer = await client.PostAsJsonAsync("/api/treasury-transfers", new { sourceTreasuryId = fixture.TreasuryA, destinationTreasuryId = fixture.TreasuryB, sourceAmount = 1, destinationAmount = 1, exchangeRate = 1 }, Ct);
+        Assert.Equal(HttpStatusCode.NotFound, transfer.StatusCode);
+        Assert.NotNull(fixture.ExpenseAccount);
+        var expense = await client.PostAsJsonAsync("/api/expenses", new { expenseAccountId = fixture.ExpenseAccount, treasuryId = fixture.TreasuryA, amount = 1 }, Ct);
+        Assert.Equal(HttpStatusCode.NotFound, expense.StatusCode);
+        var manual = await client.PostAsJsonAsync("/api/transactions", new { transactionType = "MANUAL", pattern = "TEST", currencyId = fixture.CurrencyId, exchangeRate = 1, lines = new object[]
+        {
+            new { accountId = $"TREASURY:{fixture.TreasuryA}", treasuryId = fixture.TreasuryA, debit = 0, credit = 1, foreignDebit = 0, foreignCredit = 1 },
+            new { accountId = fixture.ExpenseAccount, debit = 1, credit = 0, foreignDebit = 1, foreignCredit = 0 },
+        } }, Ct);
+        Assert.Equal(HttpStatusCode.NotFound, manual.StatusCode);
+        var editOther = await client.PostAsync($"/api/treasuries/{fixture.TreasuryA}/deactivate", null, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, editOther.StatusCode);
     }
 
     private async Task<long> OtherBranchPurchaseIdAsync()
