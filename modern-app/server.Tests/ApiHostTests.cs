@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ElitePos.LocalService.Tests;
 
-public sealed class ApiHostTests(ApiFactory factory) : IClassFixture<ApiFactory>
+public sealed class ApiHostTests(ApiFactory factory, TestAuthApiFactory authFactory) : IClassFixture<ApiFactory>, IClassFixture<TestAuthApiFactory>
 {
     private sealed record Health(string Provider, bool Connected, string Message);
 
@@ -22,7 +22,7 @@ public sealed class ApiHostTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [Fact]
     public async Task Provider_endpoint_returns_the_active_provider()
     {
-        var response = await factory.CreateClient().GetAsync("/api/database/provider", TestContext.Current.CancellationToken);
+        var response = await authFactory.CreateClientAs(userId: 1, branchId: 1, permissions: []).GetAsync("/api/database/provider", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("SQLite", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));

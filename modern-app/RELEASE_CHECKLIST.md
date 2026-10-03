@@ -4,8 +4,8 @@ Use this file as the live implementation and verification record. Mark each item
 
 ## P0 — correctness and security
 
-- [ ] Enforce authenticated identity and role/permission checks in the API.
-- [ ] Enforce server-side branch scoping for all operational reads and writes.
+- [x] Enforce authenticated identity and role/permission checks in the API.
+- [x] Enforce server-side branch scoping for all operational reads and writes.
 - [x] Add configurable approval policy endpoint and settings screen for disposal, returns, expenses, and receipts.
 - [x] Persist import country and all import data needed to reopen a shipment.
 - [ ] Support multi-currency import costs with per-line currency/rate and correct landed-cost conversion.
@@ -53,4 +53,4 @@ Use this file as the live implementation and verification record. Mark each item
 - 2026-10-03: New-sale layout separates sale details into a right-side panel and keeps the item table in the main center area, with responsive stacking on narrow screens.
 - 2026-10-03: Sales API rejects non-primary currency treasuries; frontend and backend builds passed.
 - 2026-09-29: frontend build/lint and backend build passed; API smoke and reversible import/cost test passed.
-- 2026-10-03: API authentication added (server-side sessions, lockout, permission policy on every route, server-side branch scoping, no default password; migration 046). Verified end to end against SQL Server 2022; the two P0 boxes are ticked once the automated security tests land with the CI test project.
+- 2026-10-03: API authentication added (server-side sessions, lockout, permission policy on every route, server-side branch scoping, no default password; migration 046). Verified end to end against SQL Server 2022; covered by server.Tests (route table, 401/403 per group, branch scoping, and sign-in, lockout, reset and branch isolation against SQL Server).
