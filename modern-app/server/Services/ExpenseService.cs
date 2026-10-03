@@ -21,12 +21,12 @@ public sealed class ExpenseService(DbConnectionFactory factory, TransactionServi
         return new ExpenseWriteResult(expenseNo, request.TreasuryId, refs.AccountCode, request.Amount, transaction);
     }
 
-    public async Task<IReadOnlyList<ExpenseListItem>> GetAsync(DateTime? from, DateTime? to, CancellationToken ct)
+    public async Task<IReadOnlyList<ExpenseListItem>> GetAsync(int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         await using var db = await OpenAsync(ct);
         await using var command = db.CreateCommand();
-        command.CommandText = "WITH grouped AS (SELECT MoveNo,MAX(RefNo) AS ExpenseNo,TransactionDate,MAX(CASE WHEN TreasuryId IS NULL THEN AccountId END) AS ExpenseAccountId,MAX(TreasuryId) AS TreasuryId,SUM(CASE WHEN TreasuryId IS NOT NULL THEN ForeignCredit ELSE 0 END) AS Amount,MAX(Description) AS Description,MAX(CurrencyId) AS CurrencyId FROM dbo.Transactions WHERE TransactionType='EXPENSE' AND (@from IS NULL OR TransactionDate>=@from) AND (@to IS NULL OR TransactionDate<=@to) GROUP BY MoveNo,TransactionDate) SELECT g.MoveNo,g.ExpenseNo,g.TransactionDate,g.ExpenseAccountId,a.NameEn,a.NameAr,g.TreasuryId,t.NameEn,g.CurrencyId,c.CurrencyCode,c.Symbol,g.Amount,g.Description FROM grouped g JOIN dbo.Accounts a ON a.AccountCode=g.ExpenseAccountId JOIN dbo.Treasuries t ON t.TreasuryId=g.TreasuryId JOIN dbo.Currencies c ON c.CurrencyId=g.CurrencyId ORDER BY g.TransactionDate DESC,g.MoveNo DESC";
-        Add(command, "@from", from?.Date, DbType.Date); Add(command, "@to", to?.Date, DbType.Date);
+        command.CommandText = "WITH grouped AS (SELECT MoveNo,MAX(RefNo) AS ExpenseNo,TransactionDate,MAX(CASE WHEN TreasuryId IS NULL THEN AccountId END) AS ExpenseAccountId,MAX(TreasuryId) AS TreasuryId,SUM(CASE WHEN TreasuryId IS NOT NULL THEN ForeignCredit ELSE 0 END) AS Amount,MAX(Description) AS Description,MAX(CurrencyId) AS CurrencyId FROM dbo.Transactions WHERE TransactionType='EXPENSE' AND (@branch IS NULL OR BranchId=@branch) AND (@from IS NULL OR TransactionDate>=@from) AND (@to IS NULL OR TransactionDate<=@to) GROUP BY MoveNo,TransactionDate) SELECT g.MoveNo,g.ExpenseNo,g.TransactionDate,g.ExpenseAccountId,a.NameEn,a.NameAr,g.TreasuryId,t.NameEn,g.CurrencyId,c.CurrencyCode,c.Symbol,g.Amount,g.Description FROM grouped g JOIN dbo.Accounts a ON a.AccountCode=g.ExpenseAccountId JOIN dbo.Treasuries t ON t.TreasuryId=g.TreasuryId JOIN dbo.Currencies c ON c.CurrencyId=g.CurrencyId ORDER BY g.TransactionDate DESC,g.MoveNo DESC";
+        Add(command, "@branch", branchId, DbType.Int32); Add(command, "@from", from?.Date, DbType.Date); Add(command, "@to", to?.Date, DbType.Date);
         var rows = new List<ExpenseListItem>(); await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) rows.Add(new ExpenseListItem(reader.GetInt32(0), reader.GetString(1), reader.GetDateTime(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetInt32(6), reader.GetString(7), reader.GetInt32(8), reader.GetString(9), reader.GetString(10), reader.GetDecimal(11), reader.IsDBNull(12) ? null : reader.GetString(12)));
         return rows;
@@ -44,7 +44,7 @@ public sealed class ExpenseService(DbConnectionFactory factory, TransactionServi
     {
         await using var account = db.CreateCommand(); account.CommandText = "SELECT AccountCode FROM dbo.Accounts WHERE AccountCode=@code AND AccountType='EXPENSE' AND IsActive=1"; Add(account, "@code", request.ExpenseAccountId!.Trim(), DbType.String, 50);
         var code = await account.ExecuteScalarAsync(ct) as string; if (string.IsNullOrWhiteSpace(code)) throw new ExpenseException("The selected expense account is not active.", 400);
-        await using var treasury = db.CreateCommand(); treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id"; Add(treasury, "@id", request.TreasuryId, DbType.Int32); await using var reader = await treasury.ExecuteReaderAsync(ct);
+        await using var treasury = db.CreateCommand(); treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id AND BranchId=@branch"; Add(treasury, "@id", request.TreasuryId, DbType.Int32); Add(treasury, "@branch", request.BranchId, DbType.Int32); await using var reader = await treasury.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw new ExpenseException("Treasury was not found.", 404); if (!reader.GetBoolean(1)) throw new ExpenseException("The selected treasury is inactive."); return (code, reader.GetInt32(0));
     }
 

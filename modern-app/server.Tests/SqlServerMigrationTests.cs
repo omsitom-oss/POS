@@ -5,6 +5,8 @@ namespace ElitePos.LocalService.Tests;
 
 // Applies every migration to a brand-new SQL Server database. Runs only when POS_TEST_SQLSERVER holds a
 // connection string to a disposable server (CI starts one in a container); otherwise the tests are skipped.
+// Shares a collection with SqlServerSecurityTests so they never run while the import test creates or drops [Hsain-Default].
+[Collection(SqlServerCollection.Name)]
 public sealed class SqlServerMigrationTests
 {
     private static readonly string? ServerConnectionString = Environment.GetEnvironmentVariable("POS_TEST_SQLSERVER");
@@ -140,7 +142,7 @@ public sealed class SqlServerMigrationTests
         Assert.True(await database.TableExistsAsync("ManagementSchemaMigrations", ct));
     }
 
-    private sealed class ScratchDatabase : IAsyncDisposable
+    internal sealed class ScratchDatabase : IAsyncDisposable
     {
         private readonly string serverConnectionString;
         private readonly string name;
@@ -152,6 +154,9 @@ public sealed class SqlServerMigrationTests
             this.name = name;
             this.connection = connection;
         }
+
+        // Connection string for the scratch database itself, for hosting the API against it.
+        public string ConnectionString => new SqlConnectionStringBuilder(serverConnectionString) { InitialCatalog = name, Pooling = false }.ConnectionString;
 
         public static async Task<ScratchDatabase> CreateAsync(string serverConnectionString, CancellationToken ct)
         {
@@ -188,6 +193,12 @@ public sealed class SqlServerMigrationTests
             return Convert.ToInt32(await command.ExecuteScalarAsync(ct));
         }
 
+        public async Task<T?> ScalarAsync<T>(string sql, CancellationToken ct)
+        {
+            await using var command = new SqlCommand(sql, connection);
+            return await command.ExecuteScalarAsync(ct) is T value ? value : default;
+        }
+
         public async ValueTask DisposeAsync()
         {
             await connection.DisposeAsync();
@@ -198,3 +209,6 @@ public sealed class SqlServerMigrationTests
         }
     }
 }
+
+[CollectionDefinition(SqlServerCollection.Name)]
+public sealed class SqlServerCollection { public const string Name = "SqlServer"; }

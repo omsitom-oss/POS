@@ -31,11 +31,11 @@ describe('SalesPage', () => {
     await scan('BRU-400')
     expect(screen.getByLabelText('Item quantity 1')).toHaveValue(2)
     expect(screen.getByLabelText('Item quantity 2')).toHaveValue(1)
-    expect(screen.getByText('Subtotal').nextSibling).toHaveTextContent('33 AED')
+    expect(screen.getByText('Subtotal').nextSibling).toHaveTextContent('33.00 AED')
     const discount = screen.getByText('Discount').closest('.form-field, label, div')!.querySelector('input')!
     await userEvent.clear(discount)
     await userEvent.type(discount, '3')
-    expect(screen.getByText('Total', { selector: 'strong' }).nextSibling).toHaveTextContent('30 AED')
+    expect(screen.getByText('Total', { selector: 'strong' }).nextSibling).toHaveTextContent('30.00 AED')
   })
 
   it('refuses to save without a treasury', async () => {

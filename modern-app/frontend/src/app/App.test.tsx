@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { mockFetch } from '../test/fetchMock'
 import App from './App'
 
-const session = { userId: 7, userName: 'Mona', branchId: 1, branchCode: 'B1', branchNameAr: 'الفرع الرئيسي', branchNameEn: 'Main branch', mustChangePassword: false, roleIds: [1] }
+const session = { userId: 7, userName: 'Mona', branchId: 1, branchCode: 'B1', branchNameAr: 'الفرع الرئيسي', branchNameEn: 'Main branch', mustChangePassword: false, roleIds: [1], permissions: ['SALES_VIEW'], token: 'token-1', expiresAt: '2030-01-01T00:00:00Z' }
 const health = { method: 'GET', path: '/api/health', body: { provider: 'SQLite', connected: true, message: 'ok' } }
 
 describe('App', () => {
@@ -40,7 +40,7 @@ describe('App', () => {
     render(<App />)
     await userEvent.type(screen.getByLabelText(/Email or phone number/), 'mona')
     await userEvent.type(screen.getByLabelText(/^Password/), 'secret')
-    await userEvent.click(screen.getByRole('button', { name: /Login/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Sign in/ }))
     expect(await screen.findByTitle('Log out')).toBeInTheDocument()
     expect(screen.getByText('Main branch')).toBeInTheDocument()
     const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/auth/login')!
@@ -52,7 +52,7 @@ describe('App', () => {
     render(<App />)
     await userEvent.type(screen.getByLabelText(/Email or phone number/), 'mona')
     await userEvent.type(screen.getByLabelText(/^Password/), 'wrong')
-    await userEvent.click(screen.getByRole('button', { name: /Login/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Sign in/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid username or password.')
     expect(screen.queryByTitle('Log out')).not.toBeInTheDocument()
   })
@@ -60,7 +60,7 @@ describe('App', () => {
   it('asks for both fields before calling the service', async () => {
     const fetchMock = mockFetch([health])
     render(<App />)
-    await userEvent.click(screen.getByRole('button', { name: /Login/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Sign in/ }))
     expect(screen.getByRole('alert')).toHaveTextContent('Enter your username and password.')
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/auth/login')).toBe(false)
   })

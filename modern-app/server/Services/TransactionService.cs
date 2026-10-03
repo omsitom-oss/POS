@@ -7,16 +7,16 @@ namespace ElitePos.LocalService.Services;
 
 public sealed class TransactionService(DbConnectionFactory factory)
 {
-    public Task<TransactionStatement> GetAccountStatementAsync(string accountId, DateTime? from, DateTime? to, CancellationToken ct)
+    public Task<TransactionStatement> GetAccountStatementAsync(string accountId, int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(accountId)) throw new TransactionException("Account ID is required.");
-        return GetStatementAsync("account", accountId.Trim(), from, to, ct);
+        return GetStatementAsync("account", accountId.Trim(), branchId, from, to, ct);
     }
 
-    public Task<TransactionStatement> GetTreasuryStatementAsync(int treasuryId, DateTime? from, DateTime? to, CancellationToken ct)
+    public Task<TransactionStatement> GetTreasuryStatementAsync(int treasuryId, int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         if (treasuryId <= 0) throw new TransactionException("Treasury ID is required.");
-        return GetStatementAsync("treasury", treasuryId.ToString(), from, to, ct);
+        return GetStatementAsync("treasury", treasuryId.ToString(), branchId, from, to, ct);
     }
 
     public async Task<PartnerBalance> GetPartnerBalanceAsync(int partnerId, int currencyId, CancellationToken ct)
@@ -63,7 +63,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
         try
         {
             var branchId = request.BranchId ?? await ReadDefaultBranchAsync(db, tx, ct);
-            await ValidateReferencesAsync(db, tx, request, lines, ct);
+            await ValidateReferencesAsync(db, tx, request, branchId, lines, ct);
             var moveNo = await NextMoveNoAsync(db, tx, ct);
             var ids = new List<long>(lines.Count);
 
@@ -108,7 +108,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
         var value = await command.ExecuteScalarAsync(ct); if (value is null) throw new TransactionException("An active branch is required before recording transactions."); return Convert.ToInt32(value);
     }
 
-    private async Task<TransactionStatement> GetStatementAsync(string kind, string value, DateTime? from, DateTime? to, CancellationToken ct)
+    private async Task<TransactionStatement> GetStatementAsync(string kind, string value, int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         if (from.HasValue && to.HasValue && from.Value.Date > to.Value.Date)
             throw new TransactionException("The start date cannot be after the end date.");
@@ -116,9 +116,10 @@ public sealed class TransactionService(DbConnectionFactory factory)
         await using var db = await OpenAsync(ct);
         await using var command = db.CreateCommand();
         command.CommandText = kind == "account"
-            ? "SELECT t.TransactionId,t.TransactionDate,t.MoveNo,t.TransactionType,t.Pattern,t.AccountId,t.PartnerId,t.TreasuryId,t.RefNo,t.Description,t.Debit,t.Credit,t.ForeignDebit,t.ForeignCredit,t.CurrencyId,c.CurrencyCode,c.Symbol,t.ExchangeRate,t.SavedBy,t.SavedOn FROM dbo.Transactions t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.AccountId=@value AND (@from IS NULL OR t.TransactionDate>=@from) AND (@to IS NULL OR t.TransactionDate<=@to) ORDER BY t.TransactionDate,t.TransactionId"
-            : "SELECT t.TransactionId,t.TransactionDate,t.MoveNo,t.TransactionType,t.Pattern,t.AccountId,t.PartnerId,t.TreasuryId,t.RefNo,t.Description,t.Debit,t.Credit,t.ForeignDebit,t.ForeignCredit,t.CurrencyId,c.CurrencyCode,c.Symbol,t.ExchangeRate,t.SavedBy,t.SavedOn FROM dbo.Transactions t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.TreasuryId=@value AND (@from IS NULL OR t.TransactionDate>=@from) AND (@to IS NULL OR t.TransactionDate<=@to) ORDER BY t.TransactionDate,t.TransactionId";
+            ? "SELECT t.TransactionId,t.TransactionDate,t.MoveNo,t.TransactionType,t.Pattern,t.AccountId,t.PartnerId,t.TreasuryId,t.RefNo,t.Description,t.Debit,t.Credit,t.ForeignDebit,t.ForeignCredit,t.CurrencyId,c.CurrencyCode,c.Symbol,t.ExchangeRate,t.SavedBy,t.SavedOn FROM dbo.Transactions t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.AccountId=@value AND (@branch IS NULL OR t.BranchId=@branch) AND (@from IS NULL OR t.TransactionDate>=@from) AND (@to IS NULL OR t.TransactionDate<=@to) ORDER BY t.TransactionDate,t.TransactionId"
+            : "SELECT t.TransactionId,t.TransactionDate,t.MoveNo,t.TransactionType,t.Pattern,t.AccountId,t.PartnerId,t.TreasuryId,t.RefNo,t.Description,t.Debit,t.Credit,t.ForeignDebit,t.ForeignCredit,t.CurrencyId,c.CurrencyCode,c.Symbol,t.ExchangeRate,t.SavedBy,t.SavedOn FROM dbo.Transactions t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.TreasuryId=@value AND (@branch IS NULL OR t.BranchId=@branch) AND (@from IS NULL OR t.TransactionDate>=@from) AND (@to IS NULL OR t.TransactionDate<=@to) ORDER BY t.TransactionDate,t.TransactionId";
         Add(command, "@value", kind == "account" ? value : int.Parse(value), kind == "account" ? DbType.String : DbType.Int32, kind == "account" ? 50 : null);
+        Add(command, "@branch", branchId, DbType.Int32);
         Add(command, "@from", from?.Date, DbType.Date);
         Add(command, "@to", to?.Date, DbType.Date);
 
@@ -168,7 +169,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
             throw new TransactionException($"The transaction is not balanced. Debit is {debit} and credit is {credit}.");
     }
 
-    private static async Task ValidateReferencesAsync(DbConnection db, DbTransaction tx, TransactionWriteRequest request, IReadOnlyList<TransactionLineRequest> lines, CancellationToken ct)
+    private static async Task ValidateReferencesAsync(DbConnection db, DbTransaction tx, TransactionWriteRequest request, int branchId, IReadOnlyList<TransactionLineRequest> lines, CancellationToken ct)
     {
         foreach (var currencyId in lines.Select(line => line.CurrencyId ?? request.CurrencyId).Distinct())
         {
@@ -179,8 +180,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
             if (!Convert.ToBoolean(value)) throw new TransactionException("The selected currency is inactive.");
         }
 
-        foreach (var branchId in lines.Select(_ => request.BranchId).Where(id => id.HasValue).Select(id => id!.Value).Distinct())
-            await EnsureExistsAsync(db, tx, "Branches", "BranchId", branchId, "Branch", ct);
+        await EnsureExistsAsync(db, tx, "Branches", "BranchId", branchId, "Branch", ct);
         if (request.SavedBy.HasValue)
             await EnsureExistsAsync(db, tx, "Users", "UserId", request.SavedBy.Value, "User", ct);
 
@@ -194,7 +194,8 @@ public sealed class TransactionService(DbConnectionFactory factory)
 
         foreach (var line in lines.Where(line => line.TreasuryId.HasValue))
         {
-            await using var treasury = db.CreateCommand(); treasury.Transaction = tx; treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id"; Add(treasury, "@id", line.TreasuryId, DbType.Int32);
+            await using var treasury = db.CreateCommand(); treasury.Transaction = tx; // A treasury from another branch answers as not found, so a document can only move its own branch's money.
+            treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id AND BranchId=@branch"; Add(treasury, "@id", line.TreasuryId, DbType.Int32); Add(treasury, "@branch", branchId, DbType.Int32);
             await using var reader = await treasury.ExecuteReaderAsync(ct);
             if (!await reader.ReadAsync(ct)) throw new TransactionException("Treasury was not found.", 404);
             if (!reader.GetBoolean(1)) throw new TransactionException("An inactive treasury cannot be used in a transaction.");

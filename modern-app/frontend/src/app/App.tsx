@@ -17,6 +17,7 @@ import { ExpensesPage } from '../features/expenses/ExpensesPage'
 import { ImportPurchasePage } from '../features/purchases/ImportPurchasePage'
 import { SalesPage } from '../features/sales/SalesPage'
 import { ReportsPage } from '../features/reports/ReportsPage'
+import { clearSession, readSession, saveSession, sessionExpiredEvent } from './session'
 
 type Health = { provider: string; connected: boolean; message: string }
 
@@ -33,7 +34,13 @@ function App() {
   const [managementOnline, setManagementOnline] = useState<boolean | null>(null)
   const [ratesOpen, setRatesOpen] = useState(false)
   const [purchaseImportId, setPurchaseImportId] = useState<number | undefined>()
-  const [session, setSession] = useState<AuthSession | null>(() => { try { const value = localStorage.getItem('elite-pos-session'); return value ? JSON.parse(value) as AuthSession : null } catch { return null } })
+  const [session, setSession] = useState<AuthSession | null>(readSession)
+
+  useEffect(() => {
+    const expire = () => setSession(null)
+    window.addEventListener(sessionExpiredEvent, expire)
+    return () => window.removeEventListener(sessionExpiredEvent, expire)
+  }, [])
 
   useEffect(() => {
     document.documentElement.lang = locale
@@ -89,7 +96,7 @@ function App() {
   }, [isManagement])
 
   if (!session) return <LoginPage locale={locale} onLogin={setSession} themeMode={themeMode} onLocaleChange={setLocale} onThemeModeChange={setThemeMode} />
-  if (session.mustChangePassword) return <ChangePasswordPage locale={locale} userId={session.userId} onChanged={() => setSession({ ...session, mustChangePassword: false })} />
+  if (session.mustChangePassword) return <ChangePasswordPage locale={locale} onChanged={() => { const next = { ...session, mustChangePassword: false }; saveSession(next); setSession(next) }} />
 
   const content = section === 'accounts'
     ? <AccountsPage locale={locale} />
@@ -119,7 +126,7 @@ function App() {
     ? <ManagementPage locale={locale} view={section === 'new-customer' ? 'new-customer' : customerPublicId ? 'customer-details' : 'customers'} customerPublicId={customerPublicId} onNavigate={navigate} />
     : <DesignLabPage locale={locale} section={section.replace(/^lab:/, '')} />
 
-  return <AppLayout locale={locale} onLocaleChange={setLocale} themeMode={themeMode} onThemeModeChange={setThemeMode} activeSection={section} onSectionChange={navigate} serviceOnline={isManagement ? managementOnline : health?.connected ?? null} serviceProvider={isManagement ? 'POSManagement' : health?.provider} operatorName={session.userName} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} onLogout={() => { localStorage.removeItem('elite-pos-session'); setSession(null) }} onExchangeRates={isManagement ? undefined : () => setRatesOpen(true)}><>{content}<CurrencyRatesDialog open={ratesOpen} locale={locale} onClose={() => setRatesOpen(false)} /></></AppLayout>
+  return <AppLayout locale={locale} onLocaleChange={setLocale} themeMode={themeMode} onThemeModeChange={setThemeMode} activeSection={section} onSectionChange={navigate} serviceOnline={isManagement ? managementOnline : health?.connected ?? null} serviceProvider={isManagement ? 'POSManagement' : health?.provider} operatorName={session.userName} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} onLogout={() => { void fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined); clearSession(); setSession(null) }} onExchangeRates={isManagement ? undefined : () => setRatesOpen(true)}><>{content}<CurrencyRatesDialog open={ratesOpen} locale={locale} onClose={() => setRatesOpen(false)} /></></AppLayout>
 }
 
 function sectionFromPath(path: string) {
