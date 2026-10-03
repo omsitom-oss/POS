@@ -37,7 +37,7 @@ public sealed class SqlServerMigrationTests
     // Migrations 016, 017 and 022 import reference data from the legacy [Hsain-Default] database by name, so a fresh
     // database can only be migrated when that database exists. CI recreates its tables (columns from
     // docs/legacy-analysis/03-database-schema.md) with one row each.
-    private static class LegacySource
+    internal static class LegacySource
     {
         private const string CreateDatabase = """
             IF DB_ID(N'Hsain-Default') IS NULL CREATE DATABASE [Hsain-Default];
@@ -93,7 +93,7 @@ public sealed class SqlServerMigrationTests
         Assert.True(await database.TableExistsAsync("ManagementSchemaMigrations", ct));
     }
 
-    private sealed class ScratchDatabase : IAsyncDisposable
+    internal sealed class ScratchDatabase : IAsyncDisposable
     {
         private readonly string serverConnectionString;
         private readonly string name;
@@ -105,6 +105,9 @@ public sealed class SqlServerMigrationTests
             this.name = name;
             this.connection = connection;
         }
+
+        // Connection string for the scratch database itself, for hosting the API against it.
+        public string ConnectionString => new SqlConnectionStringBuilder(serverConnectionString) { InitialCatalog = name, Pooling = false }.ConnectionString;
 
         public static async Task<ScratchDatabase> CreateAsync(string serverConnectionString, CancellationToken ct)
         {

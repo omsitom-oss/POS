@@ -1,10 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
+using ElitePos.LocalService.Security;
 
 namespace ElitePos.LocalService.Tests;
 
 // These requests are rejected before the service opens a database connection, so they run against any provider.
-public sealed class RequestValidationTests(ApiFactory factory) : IClassFixture<ApiFactory>
+public sealed class RequestValidationTests(ApiFactory factory, TestAuthApiFactory authFactory) : IClassFixture<ApiFactory>, IClassFixture<TestAuthApiFactory>
 {
     public static TheoryData<string, object, string> InvalidRequests => new()
     {
@@ -20,7 +21,8 @@ public sealed class RequestValidationTests(ApiFactory factory) : IClassFixture<A
     [MemberData(nameof(InvalidRequests))]
     public async Task Invalid_money_requests_are_rejected_with_a_problem(string path, object body, string expectedMessage)
     {
-        var response = await factory.CreateClient().PostAsJsonAsync(path, body, TestContext.Current.CancellationToken);
+        var client = authFactory.CreateClientAs(userId: 1, branchId: 1, permissions: PermissionCodes.All);
+        var response = await client.PostAsJsonAsync(path, body, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains(expectedMessage, await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken), StringComparison.OrdinalIgnoreCase);

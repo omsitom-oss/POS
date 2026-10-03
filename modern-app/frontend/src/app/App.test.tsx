@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { mockFetch } from '../test/fetchMock'
 import App from './App'
 
-const session = { userId: 7, userName: 'Mona', branchId: 1, branchCode: 'B1', branchNameAr: 'الفرع الرئيسي', branchNameEn: 'Main branch', mustChangePassword: false, roleIds: [1] }
+const session = { userId: 7, userName: 'Mona', branchId: 1, branchCode: 'B1', branchNameAr: 'الفرع الرئيسي', branchNameEn: 'Main branch', mustChangePassword: false, roleIds: [1], permissions: ['SALES_VIEW'], token: 'token-1', expiresAt: '2030-01-01T00:00:00Z' }
 const health = { method: 'GET', path: '/api/health', body: { provider: 'SQLite', connected: true, message: 'ok' } }
 
 describe('App', () => {
