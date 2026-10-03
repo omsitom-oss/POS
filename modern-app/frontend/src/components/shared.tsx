@@ -44,7 +44,12 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { if (controlledValue !== undefined) setSelected(controlledValue) }, [controlledValue])
+  // Remember the last controlled value so the picker keeps it if the parent stops controlling it.
+  const [lastControlled, setLastControlled] = useState(controlledValue)
+  if (controlledValue !== lastControlled) {
+    setLastControlled(controlledValue)
+    if (controlledValue !== undefined) setSelected(controlledValue)
+  }
   useEffect(() => {
     if (!open) return
     const close = (event: MouseEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false) }

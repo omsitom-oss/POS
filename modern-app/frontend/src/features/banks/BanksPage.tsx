@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { TableFooter, Button, EmptyState, ErrorState, FormField, IconButton, LoadingState, Modal, SearchInput, StatusBadge, SwitchInput, TextInput } from '../../components/shared'
+import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
 type Bank={bankId:number;bankCode:string;nameAr:string;nameEn:string;isActive:boolean;sortOrder:number}
 export function BanksPage({locale,onBack}:{locale:Locale;onBack:()=>void}) {
  const ar=locale==='ar'; const [rows,setRows]=useState<Bank[]>([]); const [search,setSearch]=useState(''); const [includeInactive,setIncludeInactive]=useState(false); const [loading,setLoading]=useState(true); const [error,setError]=useState(''); const [modal,setModal]=useState(false); const [editing,setEditing]=useState<Bank|null>(null); const [draft,setDraft]=useState({nameAr:'',nameEn:'',isActive:true}); const [saving,setSaving]=useState(false)
- async function load(){setLoading(true);setError('');try{const r=await fetch(`/api/banks${includeInactive?'?includeInactive=true':''}`);if(!r.ok)throw new Error(ar?'تعذر تحميل البنوك.':'Could not load banks.');setRows(await r.json())}catch(e){setError(e instanceof Error?e.message:'Request failed')}finally{setLoading(false)}}
- useEffect(()=>{void load()},[includeInactive])
+ const load = useCallback(async () => {setLoading(true);setError('');try{const r=await fetch(`/api/banks${includeInactive?'?includeInactive=true':''}`);if(!r.ok)throw new Error(ar?'تعذر تحميل البنوك.':'Could not load banks.');setRows(await r.json())}catch(e){setError(e instanceof Error?e.message:'Request failed')}finally{setLoading(false)}}, [includeInactive, ar])
+ useLoadEffect(load)
  function open(item?:Bank){setEditing(item??null);setDraft(item?{nameAr:item.nameAr,nameEn:item.nameEn,isActive:item.isActive}:{nameAr:'',nameEn:'',isActive:true});setModal(true)}
  async function save(){if(!draft.nameAr.trim()||!draft.nameEn.trim()){setError(ar?'أدخل الاسم بالعربية والإنجليزية.':'Enter both Arabic and English names.');return}setSaving(true);try{const r=await fetch(editing?`/api/banks/${editing.bankId}`:'/api/banks',{method:editing?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)});if(!r.ok)throw new Error(await r.text());setModal(false);await load()}catch(e){setError(e instanceof Error?e.message:'Could not save bank.')}finally{setSaving(false)}}
  const visible=rows.filter(x=>{const q=search.trim().toLocaleLowerCase();return !q||[x.bankCode,x.nameAr,x.nameEn].some(v=>v.toLocaleLowerCase().includes(q))})

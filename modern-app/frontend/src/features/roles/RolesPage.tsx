@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { TableFooter, Button, ConfirmDialog, EmptyState, ErrorState, FormField, IconButton, LoadingState, Modal, SearchInput, StatusBadge, SwitchInput, TextInput } from '../../components/shared'
+import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
@@ -8,8 +9,8 @@ type Permission = { permissionId: number; code: string; name: string; descriptio
 type Role = { roleId: number; name: string; isActive: boolean; permissions: Permission[] }
 export function RolesPage({ locale, onBack }: { locale: Locale; onBack: () => void }) {
   const ar = locale === 'ar'; const [roles,setRoles]=useState<Role[]>([]); const [permissions,setPermissions]=useState<Permission[]>([]); const [search,setSearch]=useState(''); const [showInactive,setShowInactive]=useState(false); const [loading,setLoading]=useState(true); const [error,setError]=useState(''); const [modal,setModal]=useState(false); const [editing,setEditing]=useState<Role|null>(null); const [name,setName]=useState(''); const [active,setActive]=useState(true); const [selected,setSelected]=useState<number[]>([]); const [saving,setSaving]=useState(false); const [confirmTarget,setConfirmTarget]=useState<Role|null>(null)
-  async function load(){setLoading(true);try{const [r,p]=await Promise.all([fetch(`/api/roles${showInactive?'?includeInactive=true':''}`),fetch('/api/permissions')]);if(!r.ok||!p.ok)throw new Error('Request failed');setRoles(await r.json());setPermissions(await p.json())}catch(reason){setError(reason instanceof Error?reason.message:'Could not load roles.')}finally{setLoading(false)}}
-  useEffect(()=>{void load()},[showInactive]); const visible=roles.filter(item=>item.name.toLowerCase().includes(search.toLowerCase().trim()))
+  const load = useCallback(async () => {setLoading(true);try{const [r,p]=await Promise.all([fetch(`/api/roles${showInactive?'?includeInactive=true':''}`),fetch('/api/permissions')]);if(!r.ok||!p.ok)throw new Error('Request failed');setRoles(await r.json());setPermissions(await p.json())}catch(reason){setError(reason instanceof Error?reason.message:'Could not load roles.')}finally{setLoading(false)}}, [showInactive])
+  useLoadEffect(load); const visible=roles.filter(item=>item.name.toLowerCase().includes(search.toLowerCase().trim()))
   function open(role?:Role){setEditing(role??null);setName(role?.name??'');setActive(role?.isActive??true);setSelected(role?.permissions.map(item=>item.permissionId)??[]);setModal(true)}
   async function save(){if(!name.trim())return setError(ar?'اسم الدور مطلوب.':'Role name is required.');setSaving(true);try{const response=await fetch(editing?`/api/roles/${editing.roleId}`:'/api/roles',{method:editing?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,isActive:active,permissionIds:selected})});if(!response.ok)throw new Error(await response.text());setModal(false);await load()}catch(reason){setError(reason instanceof Error?reason.message:'Could not save role.')}finally{setSaving(false)}}
   async function setRoleActive(role:Role,value:boolean){const response=await fetch(`/api/roles/${role.roleId}/${value?'activate':'deactivate'}`,{method:'POST'});if(!response.ok)setError(await response.text());setConfirmTarget(null);await load()}

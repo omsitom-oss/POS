@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { TableFooter, Button, EmptyState, ErrorState, FormField, IconButton, LoadingState, Modal, StatusBadge, SwitchInput, TextInput } from '../../components/shared'
+import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
@@ -11,8 +12,8 @@ const blank = { currencyNameEn: '', currencyNameAr: '', symbol: '', isPrimary: f
 export function CurrenciesPage({ locale, onBack }: { locale: Locale; onBack: () => void }) {
   const ar = locale === 'ar'
   const [rows, setRows] = useState<Currency[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [showInactive, setShowInactive] = useState(false); const [modal, setModal] = useState(false); const [editing, setEditing] = useState<Currency | null>(null); const [historyCurrency, setHistoryCurrency] = useState<Currency | null>(null); const [draft, setDraft] = useState(blank); const [saving, setSaving] = useState(false)
-  async function load() { setLoading(true); setError(''); try { const response = await fetch(`/api/currencies${showInactive ? '?includeInactive=true' : ''}`); if (!response.ok) throw new Error(await response.text() || `Request failed (${response.status})`); setRows(await response.json() as Currency[]) } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر تحميل العملات.' : 'Could not load currencies.')) } finally { setLoading(false) } }
-  useEffect(() => { void load() }, [showInactive])
+  const load = useCallback(async () => { setLoading(true); setError(''); try { const response = await fetch(`/api/currencies${showInactive ? '?includeInactive=true' : ''}`); if (!response.ok) throw new Error(await response.text() || `Request failed (${response.status})`); setRows(await response.json() as Currency[]) } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر تحميل العملات.' : 'Could not load currencies.')) } finally { setLoading(false) } }, [ar, showInactive])
+  useLoadEffect(load)
   function open(item?: Currency) { setEditing(item ?? null); setDraft(item ? { currencyNameEn: item.currencyNameEn, currencyNameAr: item.currencyNameAr, symbol: item.symbol, isPrimary: item.isPrimary, isActive: item.isActive, flagBase64: item.flagBase64 } : blank); setModal(true) }
   function chooseFlag(file?: File) { if (!file) return; if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) { setError(ar ? 'اختر صورة PNG أو JPEG أو WebP أو SVG.' : 'Choose a PNG, JPEG, WebP, or SVG image.'); return } if (file.size > 750000) { setError(ar ? 'يجب أن يكون حجم العلم أقل من 750 كيلوبايت.' : 'The flag must be smaller than 750 KB.'); return } const reader = new FileReader(); reader.onload = () => setDraft(current => ({ ...current, flagBase64: String(reader.result) })); reader.readAsDataURL(file) }
   async function save() { setSaving(true); setError(''); try { const response = await fetch(editing ? `/api/currencies/${editing.currencyId}` : '/api/currencies', { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) }); if (!response.ok) throw new Error(await response.text() || `Request failed (${response.status})`); setModal(false); await load() } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر حفظ العملة.' : 'Could not save currency.')) } finally { setSaving(false) } }

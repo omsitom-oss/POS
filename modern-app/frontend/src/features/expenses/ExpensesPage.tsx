@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Button, DateInput, EmptyState, ErrorState, FormField, LoadingState, Modal, SearchInput, Select, TableFooter, TextInput } from '../../components/shared'
+import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
@@ -13,8 +14,8 @@ const formatAmount = (value: number | string) => (Number(value) || 0).toLocaleSt
 export function ExpensesPage({ locale }: { locale: Locale }) {
   const ar = locale === 'ar'; const [rows, setRows] = useState<Expense[]>([]); const [treasuries, setTreasuries] = useState<Treasury[]>([]); const [accounts, setAccounts] = useState<Account[]>([]); const [search, setSearch] = useState(''); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [modal, setModal] = useState(false); const [error, setError] = useState('')
   const [draft, setDraft] = useState({ expenseAccountId: '', treasuryId: '', amount: '', expenseDate: today(), description: '' })
-  async function load() { setLoading(true); setError(''); try { const [expenseResponse, treasuryResponse, accountResponse] = await Promise.all([fetch('/api/expenses'), fetch('/api/treasuries'), fetch('/api/accounts/chart')]); if (!expenseResponse.ok || !treasuryResponse.ok || !accountResponse.ok) throw new Error(ar ? 'تعذر تحميل بيانات المنصرفات.' : 'Could not load expense data.'); setRows(await expenseResponse.json()); setTreasuries(await treasuryResponse.json()); setAccounts(await accountResponse.json()) } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر تنفيذ العملية.' : 'Request failed.')) } finally { setLoading(false) } }
-  useEffect(() => { void load() }, [])
+  const load = useCallback(async () => { setLoading(true); setError(''); try { const [expenseResponse, treasuryResponse, accountResponse] = await Promise.all([fetch('/api/expenses'), fetch('/api/treasuries'), fetch('/api/accounts/chart')]); if (!expenseResponse.ok || !treasuryResponse.ok || !accountResponse.ok) throw new Error(ar ? 'تعذر تحميل بيانات المنصرفات.' : 'Could not load expense data.'); setRows(await expenseResponse.json()); setTreasuries(await treasuryResponse.json()); setAccounts(await accountResponse.json()) } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر تنفيذ العملية.' : 'Request failed.')) } finally { setLoading(false) } }, [ar])
+  useLoadEffect(load)
   const expenseAccounts = accounts.filter(item => item.accountType === 'EXPENSE' && item.isActive)
   const visible = useMemo(() => { const q = search.trim().toLocaleLowerCase(); return rows.filter(item => !q || [item.expenseNo, item.expenseAccountId, item.expenseNameAr, item.expenseNameEn, item.treasuryName, item.description ?? ''].some(value => value.toLocaleLowerCase().includes(q))) }, [rows, search])
   function open() { const treasury = treasuries.find(item => item.isActive); setDraft({ expenseAccountId: expenseAccounts[0]?.accountCode ?? '', treasuryId: treasury?.treasuryId.toString() ?? '', amount: '', expenseDate: today(), description: '' }); setError(''); setModal(true) }

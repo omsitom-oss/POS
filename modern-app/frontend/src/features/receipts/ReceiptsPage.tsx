@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, DateInput, EmptyState, ErrorState, FormField, LoadingState, Modal, SearchInput, TableFooter, TextInput } from '../../components/shared'
+import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
@@ -60,7 +61,7 @@ export function ReceiptsPage({ locale, variant = 'receipts' }: { locale: Locale;
   const [partners, setPartners] = useState<Partner[]>([])
   const [treasuries, setTreasuries] = useState<Treasury[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [partnerBalance, setPartnerBalance] = useState<PartnerBalance | null>(null)
+  const [loadedBalance, setLoadedBalance] = useState<{ key: string; value: PartnerBalance | null } | null>(null)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'RECEIPT' | 'PAYMENT'>(expensesView ? 'PAYMENT' : 'ALL')
   const [loading, setLoading] = useState(true)
@@ -70,7 +71,7 @@ export function ReceiptsPage({ locale, variant = 'receipts' }: { locale: Locale;
   const [lastEditedAmount, setLastEditedAmount] = useState<'treasury' | 'partner'>('treasury')
   const [draft, setDraft] = useState({ type: 'RECEIPT' as 'RECEIPT' | 'PAYMENT', partnerId: '', treasuryId: '', partnerCurrencyId: '', amount: '', partnerAmount: '', exchangeRate: '1', reason: '', description: '', receiptDate: today() })
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
       const [receiptResponse, partnerResponse, treasuryResponse, currencyResponse] = await Promise.all([
@@ -82,14 +83,18 @@ export function ReceiptsPage({ locale, variant = 'receipts' }: { locale: Locale;
       if (!receiptResponse.ok || !partnerResponse.ok || !treasuryResponse.ok || !currencyResponse.ok) throw new Error(ar ? 'تعذر تحميل بيانات الإيصالات.' : 'Could not load receipt data.')
       setRows(await receiptResponse.json()); setPartners(await partnerResponse.json()); setTreasuries(await treasuryResponse.json()); setCurrencies(await currencyResponse.json())
     } catch (e) { setError(e instanceof Error ? e.message : (ar ? 'تعذر تنفيذ العملية.' : 'Request failed.')) } finally { setLoading(false) }
-  }
-  useEffect(() => { void load() }, [typeFilter, expensesView])
+  }, [typeFilter, ar])
+  useLoadEffect(load)
+  // Only the balance fetched for the current partner and currency is shown.
+  const balanceKey = draft.partnerId && draft.partnerCurrencyId ? `${draft.partnerId}:${draft.partnerCurrencyId}` : ''
+  const partnerBalance = balanceKey && loadedBalance?.key === balanceKey ? loadedBalance.value : null
   useEffect(() => {
-    if (!draft.partnerId || !draft.partnerCurrencyId) { setPartnerBalance(null); return }
+    if (!balanceKey) return
+    const [partnerId, currencyId] = balanceKey.split(':')
     const controller = new AbortController()
-    void fetch(`/api/transactions/partner/${draft.partnerId}/balance?currencyId=${draft.partnerCurrencyId}`, { signal: controller.signal }).then(response => response.ok ? response.json() : null).then(value => setPartnerBalance(value)).catch(() => undefined)
+    void fetch(`/api/transactions/partner/${partnerId}/balance?currencyId=${currencyId}`, { signal: controller.signal }).then(response => response.ok ? response.json() : null).then(value => setLoadedBalance({ key: balanceKey, value })).catch(() => undefined)
     return () => controller.abort()
-  }, [draft.partnerId, draft.partnerCurrencyId])
+  }, [balanceKey])
 
   function currencyRate(currencyId: number) { const currency = currencies.find(item => item.currencyId === currencyId); return currency?.isPrimary ? 1 : currency?.exchangeRate ?? null }
   function pairRate(treasuryCurrencyId: number | undefined, partnerCurrencyId: number | undefined) { const treasuryRate = treasuryCurrencyId ? currencyRate(treasuryCurrencyId) : null; const partnerRate = partnerCurrencyId ? currencyRate(partnerCurrencyId) : null; return treasuryRate && partnerRate ? partnerRate / treasuryRate : null }

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { TableFooter, Button, ConfirmDialog, EmptyState, ErrorState, FormField, IconButton, LoadingState, Modal, SearchInput, StatusBadge, SwitchInput, TextInput } from '../../components/shared'
+import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
@@ -7,8 +8,8 @@ import { PageHeader, type Locale } from '../../layouts/AppLayout'
 type Branch = { branchId: number; branchCode: string; nameAr: string; nameEn: string; isActive: boolean; sortOrder: number; createdAt: string; updatedAt: string }
 export function BranchesPage({ locale, onBack }: { locale: Locale; onBack: () => void }) {
   const ar = locale === 'ar'; const [rows, setRows] = useState<Branch[]>([]); const [search, setSearch] = useState(''); const [showInactive, setShowInactive] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [modal, setModal] = useState(false); const [editing, setEditing] = useState<Branch | null>(null); const [draft, setDraft] = useState({ nameAr: '', nameEn: '', isActive: true }); const [saving, setSaving] = useState(false); const [confirmTarget, setConfirmTarget] = useState<Branch | null>(null); const [statusBusy, setStatusBusy] = useState(false)
-  async function load() { setLoading(true); setError(''); try { const response = await fetch(`/api/branches${showInactive ? '?includeInactive=true' : ''}`); if (!response.ok) throw new Error(await response.text() || `Request failed (${response.status})`); setRows(await response.json() as Branch[]) } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر تحميل الفروع.' : 'Could not load branches.')) } finally { setLoading(false) } }
-  useEffect(() => { void load() }, [showInactive])
+  const load = useCallback(async () => { setLoading(true); setError(''); try { const response = await fetch(`/api/branches${showInactive ? '?includeInactive=true' : ''}`); if (!response.ok) throw new Error(await response.text() || `Request failed (${response.status})`); setRows(await response.json() as Branch[]) } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر تحميل الفروع.' : 'Could not load branches.')) } finally { setLoading(false) } }, [showInactive, ar])
+  useLoadEffect(load)
   const visible = useMemo(() => { const query = search.trim().toLocaleLowerCase(); return query ? rows.filter(item => [item.branchCode, item.nameAr, item.nameEn].some(value => value.toLocaleLowerCase().includes(query))) : rows }, [rows, search])
   function open(item?: Branch) { setEditing(item ?? null); setDraft(item ? { nameAr: item.nameAr, nameEn: item.nameEn, isActive: item.isActive } : { nameAr: '', nameEn: '', isActive: true }); setModal(true) }
   async function save() { if (!draft.nameAr.trim() || !draft.nameEn.trim()) { setError(ar ? 'أدخل اسم الفرع بالعربية والإنجليزية.' : 'Enter both Arabic and English branch names.'); return } setSaving(true); setError(''); try { const response = await fetch(editing ? `/api/branches/${editing.branchId}` : '/api/branches', { method: editing ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) }); if (!response.ok) throw new Error(await response.text() || `Request failed (${response.status})`); setModal(false); await load() } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر حفظ الفرع.' : 'Could not save branch.')) } finally { setSaving(false) } }
