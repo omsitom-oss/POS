@@ -50,109 +50,113 @@ DECLARE @genericTypeId int = (SELECT SettingTypeId FROM dbo.SettingTypes WHERE C
 IF @categoryTypeId IS NULL OR @unitTypeId IS NULL
     THROW 51000, 'Required ITEM_CATEGORY or UNIT setting type is missing.', 1;
 
-INSERT INTO dbo.Settings (SettingTypeId, ParentSettingId, Code, ValueAr, ValueEn, SortOrder, IsActive)
-SELECT @categoryTypeId, NULL,
-       CONCAT(N'LEGACY-CAT-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.CategoryID)), 6)),
-       source.CategoryName, source.CategoryName,
-       ROW_NUMBER() OVER (ORDER BY source.CategoryID), 1
-FROM [Hsain-Default].dbo.SettingsCategories AS source
-WHERE NULLIF(LTRIM(RTRIM(source.CategoryName)), N'') IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM dbo.Settings AS existing
-      WHERE existing.SettingTypeId = @categoryTypeId
-        AND existing.Code = CONCAT(N'LEGACY-CAT-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.CategoryID)), 6))
-  );
+-- The legacy import runs only where the legacy database exists; a new customer database starts empty.
+IF DB_ID(N'Hsain-Default') IS NOT NULL
+BEGIN
+    INSERT INTO dbo.Settings (SettingTypeId, ParentSettingId, Code, ValueAr, ValueEn, SortOrder, IsActive)
+    SELECT @categoryTypeId, NULL,
+           CONCAT(N'LEGACY-CAT-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.CategoryID)), 6)),
+           source.CategoryName, source.CategoryName,
+           ROW_NUMBER() OVER (ORDER BY source.CategoryID), 1
+    FROM [Hsain-Default].dbo.SettingsCategories AS source
+    WHERE NULLIF(LTRIM(RTRIM(source.CategoryName)), N'') IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.Settings AS existing
+          WHERE existing.SettingTypeId = @categoryTypeId
+            AND existing.Code = CONCAT(N'LEGACY-CAT-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.CategoryID)), 6))
+      );
 
-INSERT INTO dbo.Settings (SettingTypeId, ParentSettingId, Code, ValueAr, ValueEn, SortOrder, IsActive)
-SELECT @unitTypeId, NULL,
-       CONCAT(N'LEGACY-UNIT-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.UnitID)), 6)),
-       source.UnitName,
-       CASE source.UnitName
-           WHEN N'علبة' THEN N'Box'
-           WHEN N'كيلو' THEN N'Kilogram'
-           WHEN N'طن' THEN N'Ton'
-           WHEN N'جرام' THEN N'Gram'
-           WHEN N'حبة' THEN N'Piece'
-           WHEN N'كرتونة' THEN N'Carton'
-           WHEN N'طبق' THEN N'Plate'
-           WHEN N'جردل' THEN N'Bucket'
-           ELSE source.UnitName
-       END,
-       COALESCE((SELECT MAX(existing.SortOrder) FROM dbo.Settings AS existing WHERE existing.SettingTypeId = @unitTypeId), 0)
-         + ROW_NUMBER() OVER (ORDER BY source.UnitID), 1
-FROM [Hsain-Default].dbo.SettingsUnits AS source
-WHERE NULLIF(LTRIM(RTRIM(source.UnitName)), N'') IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM dbo.Settings AS existing
-      WHERE existing.SettingTypeId = @unitTypeId
-        AND existing.ValueAr = source.UnitName COLLATE DATABASE_DEFAULT
-  );
+    INSERT INTO dbo.Settings (SettingTypeId, ParentSettingId, Code, ValueAr, ValueEn, SortOrder, IsActive)
+    SELECT @unitTypeId, NULL,
+           CONCAT(N'LEGACY-UNIT-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.UnitID)), 6)),
+           source.UnitName,
+           CASE source.UnitName
+               WHEN N'علبة' THEN N'Box'
+               WHEN N'كيلو' THEN N'Kilogram'
+               WHEN N'طن' THEN N'Ton'
+               WHEN N'جرام' THEN N'Gram'
+               WHEN N'حبة' THEN N'Piece'
+               WHEN N'كرتونة' THEN N'Carton'
+               WHEN N'طبق' THEN N'Plate'
+               WHEN N'جردل' THEN N'Bucket'
+               ELSE source.UnitName
+           END,
+           COALESCE((SELECT MAX(existing.SortOrder) FROM dbo.Settings AS existing WHERE existing.SettingTypeId = @unitTypeId), 0)
+             + ROW_NUMBER() OVER (ORDER BY source.UnitID), 1
+    FROM [Hsain-Default].dbo.SettingsUnits AS source
+    WHERE NULLIF(LTRIM(RTRIM(source.UnitName)), N'') IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.Settings AS existing
+          WHERE existing.SettingTypeId = @unitTypeId
+            AND existing.ValueAr = source.UnitName COLLATE DATABASE_DEFAULT
+      );
 
-INSERT INTO dbo.Items (LegacyItemId, ItemCode, NameAr, NameEn, ManufacturerName, CategorySettingId, GenericSettingId, SellPrice, MinimumLevelForAlert, IsActive)
-SELECT source.ItemID,
-       CONCAT(N'ITM-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.ItemID)), 6)),
-       source.ItemName,
-       source.ItemName,
-       NULLIF(LTRIM(RTRIM(source.ManufacturerName)), N''),
-       categorySetting.SettingId,
-       genericSetting.SettingId,
-       COALESCE(TRY_CONVERT(decimal(19,4), source.SellPrice), 0),
-       CASE WHEN source.MinimumLevelForAlert < 0 THEN 0 ELSE source.MinimumLevelForAlert END,
-       1
-FROM [Hsain-Default].dbo.SettingsItems AS source
-OUTER APPLY (
-    SELECT TOP (1) setting.SettingId
-    FROM dbo.Settings AS setting
-    WHERE setting.SettingTypeId = @categoryTypeId
-      AND setting.Code = CONCAT(N'LEGACY-CAT-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.CategoryID)), 6))
-) AS categorySetting
-OUTER APPLY (
-    SELECT TOP (1) setting.SettingId
-    FROM dbo.Settings AS setting
-    WHERE @genericTypeId IS NOT NULL
-      AND setting.SettingTypeId = @genericTypeId
-      AND setting.Code = CONCAT(N'LEGACY-GEN-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.GenericID)), 6))
-) AS genericSetting
-WHERE NULLIF(LTRIM(RTRIM(source.ItemName)), N'') IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM dbo.Items AS existing WHERE existing.LegacyItemId = source.ItemID);
+    INSERT INTO dbo.Items (LegacyItemId, ItemCode, NameAr, NameEn, ManufacturerName, CategorySettingId, GenericSettingId, SellPrice, MinimumLevelForAlert, IsActive)
+    SELECT source.ItemID,
+           CONCAT(N'ITM-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.ItemID)), 6)),
+           source.ItemName,
+           source.ItemName,
+           NULLIF(LTRIM(RTRIM(source.ManufacturerName)), N''),
+           categorySetting.SettingId,
+           genericSetting.SettingId,
+           COALESCE(TRY_CONVERT(decimal(19,4), source.SellPrice), 0),
+           CASE WHEN source.MinimumLevelForAlert < 0 THEN 0 ELSE source.MinimumLevelForAlert END,
+           1
+    FROM [Hsain-Default].dbo.SettingsItems AS source
+    OUTER APPLY (
+        SELECT TOP (1) setting.SettingId
+        FROM dbo.Settings AS setting
+        WHERE setting.SettingTypeId = @categoryTypeId
+          AND setting.Code = CONCAT(N'LEGACY-CAT-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.CategoryID)), 6))
+    ) AS categorySetting
+    OUTER APPLY (
+        SELECT TOP (1) setting.SettingId
+        FROM dbo.Settings AS setting
+        WHERE @genericTypeId IS NOT NULL
+          AND setting.SettingTypeId = @genericTypeId
+          AND setting.Code = CONCAT(N'LEGACY-GEN-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), source.GenericID)), 6))
+    ) AS genericSetting
+    WHERE NULLIF(LTRIM(RTRIM(source.ItemName)), N'') IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM dbo.Items AS existing WHERE existing.LegacyItemId = source.ItemID);
 
-INSERT INTO dbo.ItemUnits (ItemId, UnitSettingId, ConversionToBase, IsBase, SortOrder)
-SELECT item.ItemId, unitSetting.SettingId, 1, 1, 0
-FROM [Hsain-Default].dbo.SettingsItems AS source
-JOIN dbo.Items AS item ON item.LegacyItemId = source.ItemID
-OUTER APPLY (
-    SELECT TOP (1) setting.SettingId
-    FROM dbo.Settings AS setting
-    WHERE setting.SettingTypeId = @unitTypeId
-      AND setting.ValueAr = source.UnitName COLLATE DATABASE_DEFAULT
-    ORDER BY CASE WHEN setting.Code = N'ST-000008' THEN 0 ELSE 1 END, setting.SettingId
-) AS unitSetting
-WHERE NULLIF(LTRIM(RTRIM(source.UnitName)), N'') IS NOT NULL
-  AND unitSetting.SettingId IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM dbo.ItemUnits AS existing
-      WHERE existing.ItemId = item.ItemId AND existing.UnitSettingId = unitSetting.SettingId
-  );
+    INSERT INTO dbo.ItemUnits (ItemId, UnitSettingId, ConversionToBase, IsBase, SortOrder)
+    SELECT item.ItemId, unitSetting.SettingId, 1, 1, 0
+    FROM [Hsain-Default].dbo.SettingsItems AS source
+    JOIN dbo.Items AS item ON item.LegacyItemId = source.ItemID
+    OUTER APPLY (
+        SELECT TOP (1) setting.SettingId
+        FROM dbo.Settings AS setting
+        WHERE setting.SettingTypeId = @unitTypeId
+          AND setting.ValueAr = source.UnitName COLLATE DATABASE_DEFAULT
+        ORDER BY CASE WHEN setting.Code = N'ST-000008' THEN 0 ELSE 1 END, setting.SettingId
+    ) AS unitSetting
+    WHERE NULLIF(LTRIM(RTRIM(source.UnitName)), N'') IS NOT NULL
+      AND unitSetting.SettingId IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.ItemUnits AS existing
+          WHERE existing.ItemId = item.ItemId AND existing.UnitSettingId = unitSetting.SettingId
+      );
 
-INSERT INTO dbo.ItemUnits (ItemId, UnitSettingId, ConversionToBase, IsBase, SortOrder)
-SELECT item.ItemId, unitSetting.SettingId,
-       CASE WHEN source.NoOfUnits > 0 THEN CONVERT(decimal(19,6), source.NoOfUnits) ELSE 1 END,
-       0, 1
-FROM [Hsain-Default].dbo.SettingsItems AS source
-JOIN dbo.Items AS item ON item.LegacyItemId = source.ItemID
-OUTER APPLY (
-    SELECT TOP (1) setting.SettingId
-    FROM dbo.Settings AS setting
-    WHERE setting.SettingTypeId = @unitTypeId
-      AND setting.ValueAr = source.BigUnitName COLLATE DATABASE_DEFAULT
-    ORDER BY setting.SettingId
-) AS unitSetting
-WHERE NULLIF(LTRIM(RTRIM(source.BigUnitName)), N'') IS NOT NULL
-  AND NULLIF(LTRIM(RTRIM(source.UnitName)), N'') IS NOT NULL
-  AND source.BigUnitName <> source.UnitName
-  AND source.NoOfUnits > 1
-  AND unitSetting.SettingId IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM dbo.ItemUnits AS existing
-      WHERE existing.ItemId = item.ItemId AND existing.UnitSettingId = unitSetting.SettingId
-  );
+    INSERT INTO dbo.ItemUnits (ItemId, UnitSettingId, ConversionToBase, IsBase, SortOrder)
+    SELECT item.ItemId, unitSetting.SettingId,
+           CASE WHEN source.NoOfUnits > 0 THEN CONVERT(decimal(19,6), source.NoOfUnits) ELSE 1 END,
+           0, 1
+    FROM [Hsain-Default].dbo.SettingsItems AS source
+    JOIN dbo.Items AS item ON item.LegacyItemId = source.ItemID
+    OUTER APPLY (
+        SELECT TOP (1) setting.SettingId
+        FROM dbo.Settings AS setting
+        WHERE setting.SettingTypeId = @unitTypeId
+          AND setting.ValueAr = source.BigUnitName COLLATE DATABASE_DEFAULT
+        ORDER BY setting.SettingId
+    ) AS unitSetting
+    WHERE NULLIF(LTRIM(RTRIM(source.BigUnitName)), N'') IS NOT NULL
+      AND NULLIF(LTRIM(RTRIM(source.UnitName)), N'') IS NOT NULL
+      AND source.BigUnitName <> source.UnitName
+      AND source.NoOfUnits > 1
+      AND unitSetting.SettingId IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM dbo.ItemUnits AS existing
+          WHERE existing.ItemId = item.ItemId AND existing.UnitSettingId = unitSetting.SettingId
+      );
+END;

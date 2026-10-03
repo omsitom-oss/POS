@@ -9,34 +9,72 @@ public sealed class SqlServerMigrationTests
 {
     private static readonly string? ServerConnectionString = Environment.GetEnvironmentVariable("POS_TEST_SQLSERVER");
 
-    [Fact]
-    public async Task Pos_migrations_apply_cleanly_to_an_empty_database()
+    // The POS tests create and drop [Hsain-Default], the legacy database name the migrations hard-code. They only run
+    // when the server is explicitly marked disposable, so pointing POS_TEST_SQLSERVER at a real server never touches it.
+    private static readonly bool ServerIsDisposable = Environment.GetEnvironmentVariable("POS_TEST_SQLSERVER_DISPOSABLE") == "true";
+
+    private static void SkipUnlessDisposableServer()
     {
         Assert.SkipWhen(string.IsNullOrWhiteSpace(ServerConnectionString), "POS_TEST_SQLSERVER is not set.");
-        var ct = TestContext.Current.CancellationToken;
-        await LegacySource.EnsureAsync(ServerConnectionString!, ct);
-        await using var database = await ScratchDatabase.CreateAsync(ServerConnectionString!, ct);
-
-        foreach (var migration in PosMigrationRunner.GetMigrations())
-        {
-            // 031 requires a branch, which a real install creates in the Branches screen after 008 has run.
-            if (migration.Version == 31)
-                await database.ExecuteAsync("IF NOT EXISTS (SELECT 1 FROM dbo.Branches) INSERT INTO dbo.Branches (BranchCode, NameAr, NameEn) VALUES (N'MAIN', N'الفرع الرئيسي', N'Main branch');", "Seed first branch", ct);
-            await database.ExecuteAsync(MigrationSql.Read(migration.Name), $"POS {migration.Version:D3} {migration.Title}", ct);
-        }
-
-        foreach (var table in new[] { "SettingTypes", "Settings", "Items", "Purchases", "Sales", "StockMovements", "Transactions", "Users", "Roles" })
-            Assert.True(await database.TableExistsAsync(table, ct), $"Expected table dbo.{table} after POS migrations.");
-
-        // The legacy import migrations (016, 017, 022) copy the seeded legacy rows.
-        Assert.Equal(1, await database.CountAsync("SELECT COUNT(*) FROM dbo.Items WHERE LegacyItemId = 1", ct));
-        Assert.Equal(2, await database.CountAsync("SELECT COUNT(*) FROM dbo.ItemUnits iu JOIN dbo.Items i ON i.ItemId = iu.ItemId WHERE i.LegacyItemId = 1", ct));
-        Assert.Equal(1, await database.CountAsync("SELECT COUNT(*) FROM dbo.Partners WHERE LegacyPartnerId = 1", ct));
+        Assert.SkipUnless(ServerIsDisposable, "POS_TEST_SQLSERVER_DISPOSABLE is not 'true'; these tests create and drop [Hsain-Default].");
     }
 
-    // Migrations 016, 017 and 022 import reference data from the legacy [Hsain-Default] database by name, so a fresh
-    // database can only be migrated when that database exists. CI recreates its tables (columns from
-    // docs/legacy-analysis/03-database-schema.md) with one row each.
+    [Fact]
+    public async Task Pos_migrations_build_a_new_customer_database_without_the_legacy_database()
+    {
+        SkipUnlessDisposableServer();
+        var ct = TestContext.Current.CancellationToken;
+        await LegacySource.DropAsync(ServerConnectionString!, ct);
+        await using var database = await ScratchDatabase.CreateAsync(ServerConnectionString!, ct);
+
+        await ApplyPosMigrationsAsync(database, ct);
+
+        await AssertCoreTablesAsync(database, ct);
+        Assert.Equal(0, await database.CountAsync("SELECT COUNT(*) FROM dbo.Items", ct));
+        Assert.Equal(0, await database.CountAsync("SELECT COUNT(*) FROM dbo.Partners", ct));
+        // 031 creates the main branch when the database has none.
+        Assert.Equal(1, await database.CountAsync("SELECT COUNT(*) FROM dbo.Branches WHERE BranchCode = N'BR-000001' AND NameEn = N'Main branch'", ct));
+    }
+
+    [Fact]
+    public async Task Pos_migrations_import_reference_data_from_the_legacy_database()
+    {
+        SkipUnlessDisposableServer();
+        var ct = TestContext.Current.CancellationToken;
+        await LegacySource.EnsureAsync(ServerConnectionString!, ct);
+        try
+        {
+            await using var database = await ScratchDatabase.CreateAsync(ServerConnectionString!, ct);
+
+            await ApplyPosMigrationsAsync(database, ct);
+
+            await AssertCoreTablesAsync(database, ct);
+            // The legacy import migrations (016, 017, 022) copy the seeded legacy rows.
+            Assert.Equal(1, await database.CountAsync("SELECT COUNT(*) FROM dbo.Items WHERE LegacyItemId = 1", ct));
+            Assert.Equal(2, await database.CountAsync("SELECT COUNT(*) FROM dbo.ItemUnits iu JOIN dbo.Items i ON i.ItemId = iu.ItemId WHERE i.LegacyItemId = 1", ct));
+            Assert.Equal(1, await database.CountAsync("SELECT COUNT(*) FROM dbo.Partners WHERE LegacyPartnerId = 1", ct));
+        }
+        finally
+        {
+            await LegacySource.DropAsync(ServerConnectionString!, ct);
+        }
+    }
+
+    private static async Task ApplyPosMigrationsAsync(ScratchDatabase database, CancellationToken ct)
+    {
+        foreach (var migration in PosMigrationRunner.GetMigrations())
+            await database.ExecuteAsync(MigrationSql.Read(migration.Name), $"POS {migration.Version:D3} {migration.Title}", ct);
+    }
+
+    private static async Task AssertCoreTablesAsync(ScratchDatabase database, CancellationToken ct)
+    {
+        foreach (var table in new[] { "SettingTypes", "Settings", "Branches", "Items", "Purchases", "Sales", "StockMovements", "Transactions", "Users", "Roles" })
+            Assert.True(await database.TableExistsAsync(table, ct), $"Expected table dbo.{table} after POS migrations.");
+    }
+
+    // Migrations 016, 017 and 022 import reference data from the legacy [Hsain-Default] database when it exists.
+    // The import test recreates the tables they read (columns from docs/legacy-analysis/03-database-schema.md)
+    // with one row each.
     private static class LegacySource
     {
         private const string CreateDatabase = """
@@ -62,6 +100,15 @@ public sealed class SqlServerMigrationTests
                 INSERT INTO dbo.SettingsPartners VALUES (1, 1, 0, N'Walk-in clinic', N'0500000000', N'Dubai', NULL, NULL, N'');
             END;
             """;
+
+        public static async Task DropAsync(string serverConnectionString, CancellationToken ct)
+        {
+            SqlConnection.ClearAllPools();
+            await using var master = new SqlConnection(serverConnectionString);
+            await master.OpenAsync(ct);
+            await using var drop = new SqlCommand("IF DB_ID(N'Hsain-Default') IS NOT NULL BEGIN ALTER DATABASE [Hsain-Default] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [Hsain-Default]; END;", master);
+            await drop.ExecuteNonQueryAsync(ct);
+        }
 
         public static async Task EnsureAsync(string serverConnectionString, CancellationToken ct)
         {

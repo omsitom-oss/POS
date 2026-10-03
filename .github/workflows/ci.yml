@@ -37,6 +37,7 @@ jobs:
           for attempt in $(seq 1 60); do
             if docker exec mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$password" -C -Q "SELECT 1" >/dev/null 2>&1; then
               echo "POS_TEST_SQLSERVER=Server=localhost,1433;User ID=sa;Password=$password;TrustServerCertificate=True;Encrypt=False" >> "$GITHUB_ENV"
+              echo "POS_TEST_SQLSERVER_DISPOSABLE=true" >> "$GITHUB_ENV"
               exit 0
             fi
             sleep 2
