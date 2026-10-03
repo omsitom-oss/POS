@@ -20,7 +20,8 @@ public sealed class DbConnectionFactory(DatabaseOptions options, IConfiguration 
             }
 
             var builder = new SqlConnectionStringBuilder(connectionString);
-            if (!builder.IntegratedSecurity)
+            // SQL credentials are accepted only by the automated tests, which run against a disposable SQL Server container.
+            if (!builder.IntegratedSecurity && !environment.IsEnvironment("Testing"))
             {
                 throw new InvalidOperationException(
                     "SQL Server connections must use Windows Integrated Security. SQL credentials are not supported here.");
