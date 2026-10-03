@@ -15,8 +15,6 @@ public static class SecurityRegistration
         {
             foreach (var code in PermissionCodes.All)
                 options.AddPolicy(code, policy => policy.RequireAuthenticatedUser().RequireClaim(PosClaims.Permission, code));
-            // Any endpoint that forgets to declare a policy still requires a signed-in user.
-            options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
         });
         return services;
     }

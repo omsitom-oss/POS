@@ -126,30 +126,32 @@ catch (Exception exception)
 app.MapGet("/api/health", async (DatabaseHealthService health, CancellationToken cancellationToken) =>
     Results.Ok(await health.CheckAsync(cancellationToken))).AllowAnonymous();
 
-app.MapGet("/api/database/provider", (DbConnectionFactory factory) =>
-    Results.Ok(new { provider = factory.ProviderName })).RequireAuthorization();
-app.MapManagementEndpoints();
-app.MapSettingsEndpoints();
-app.MapLocationEndpoints();
-app.MapCompanyProfileEndpoints();
-app.MapCurrencyEndpoints();
-app.MapBranchEndpoints();
-app.MapTreasuryEndpoints();
-app.MapBankEndpoints();
-app.MapPartnerEndpoints();
-app.MapUserEndpoints();
-app.MapAuthEndpoints();
-app.MapApprovalEndpoints();
-app.MapAccountEndpoints();
-app.MapPurchaseEndpoints();
-app.MapSalesEndpoints();
-app.MapReportEndpoints();
-app.MapRoleEndpoints();
-app.MapItemEndpoints();
-app.MapInventoryEndpoints();
-app.MapTransactionEndpoints();
-app.MapReceiptEndpoints();
-app.MapExpenseEndpoints();
-app.MapTreasuryTransferEndpoints();
+// Every API route requires a signed-in user unless it opts out with AllowAnonymous (health, login).
+var api = app.MapGroup("").RequireAuthorization();
+api.MapGet("/api/database/provider", (DbConnectionFactory factory) =>
+    Results.Ok(new { provider = factory.ProviderName }));
+api.MapManagementEndpoints();
+api.MapSettingsEndpoints();
+api.MapLocationEndpoints();
+api.MapCompanyProfileEndpoints();
+api.MapCurrencyEndpoints();
+api.MapBranchEndpoints();
+api.MapTreasuryEndpoints();
+api.MapBankEndpoints();
+api.MapPartnerEndpoints();
+api.MapUserEndpoints();
+api.MapAuthEndpoints();
+api.MapApprovalEndpoints();
+api.MapAccountEndpoints();
+api.MapPurchaseEndpoints();
+api.MapSalesEndpoints();
+api.MapReportEndpoints();
+api.MapRoleEndpoints();
+api.MapItemEndpoints();
+api.MapInventoryEndpoints();
+api.MapTransactionEndpoints();
+api.MapReceiptEndpoints();
+api.MapExpenseEndpoints();
+api.MapTreasuryTransferEndpoints();
 
 app.Run();
