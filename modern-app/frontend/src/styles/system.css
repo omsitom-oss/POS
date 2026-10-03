@@ -1206,3 +1206,9 @@ textarea.text-input { height: auto; padding-block: 10px; }
 .searchable-select-options::-webkit-scrollbar-button,.purchase-item-options::-webkit-scrollbar-button{display:none;width:0;height:0}
 .searchable-select-options button,.purchase-item-options button{min-height:38px;padding:9px 10px;border-radius:6px}
 .searchable-select-options button:hover,.searchable-select-options button.is-selected,.purchase-item-options button:hover{color:var(--text-primary);background:color-mix(in srgb,var(--primary) 14%,transparent)}
+.form-success { margin-block-end: 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border)); border-radius: var(--radius-sm); color: var(--success); background: var(--success-soft); }
+.return-lines-table { min-width: 0; }
+.return-lines-table th, .return-lines-table td { padding-inline: 8px; }
+.return-lines-table td:first-child { white-space: normal; }
+.return-lines-table .form-field { gap: 4px; }
+.return-lines-table .text-input { inline-size: 6.5rem; }
