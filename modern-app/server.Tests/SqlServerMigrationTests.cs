@@ -18,7 +18,12 @@ public sealed class SqlServerMigrationTests
         await using var database = await ScratchDatabase.CreateAsync(ServerConnectionString!, ct);
 
         foreach (var migration in PosMigrationRunner.GetMigrations())
+        {
+            // 031 requires a branch, which a real install creates in the Branches screen after 008 has run.
+            if (migration.Version == 31)
+                await database.ExecuteAsync("IF NOT EXISTS (SELECT 1 FROM dbo.Branches) INSERT INTO dbo.Branches (BranchCode, NameAr, NameEn) VALUES (N'MAIN', N'الفرع الرئيسي', N'Main branch');", "Seed first branch", ct);
             await database.ExecuteAsync(MigrationSql.Read(migration.Name), $"POS {migration.Version:D3} {migration.Title}", ct);
+        }
 
         foreach (var table in new[] { "SettingTypes", "Settings", "Items", "Purchases", "Sales", "StockMovements", "Transactions", "Users", "Roles" })
             Assert.True(await database.TableExistsAsync(table, ct), $"Expected table dbo.{table} after POS migrations.");
