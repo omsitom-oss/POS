@@ -33,6 +33,16 @@ dotnet run
 
 The POS migration verifies the active database name and refuses unexpected existing user objects. Customer POS migrations under `server/Data/Pos/Migrations` remain separate from Management migrations. Never run them against `POSManagement` or the legacy database. See `docs/pos/settings/` for the Settings schema, API, UI, and boundaries.
 
+## Tests
+
+```powershell
+dotnet test server.Tests
+cd frontend
+npm test
+```
+
+`server.Tests` hosts the API in memory against a throwaway SQLite file, so it needs no local SQL Server. The migration tests that apply every POS and Management script to an empty SQL Server database run only when `POS_TEST_SQLSERVER` holds a connection string to a disposable server. The POS migration tests also need `POS_TEST_SQLSERVER_DISPOSABLE=true`, because they create and drop the legacy `Hsain-Default` database on that server. Never set it against a server holding real data. CI starts a throwaway server in a container and sets both. GitHub Actions (`.github/workflows/ci.yml`) runs both suites, the frontend lint and the frontend build on every pull request and push to `main`.
+
 ## Structure
 
 - `frontend/src/app` â€” entry state and locale.

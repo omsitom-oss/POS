@@ -13,6 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="server.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Data\Management\Migrations\*.sql" />
     <EmbeddedResource Include="Data\Pos\Migrations\*.sql" />
     <Content Remove="migrate-output*/**" />
