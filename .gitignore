@@ -1,0 +1,25 @@
+# Build output
+bin/
+obj/
+dist/
+node_modules/
+**/migrate-output*/
+**/phase4b-*/
+
+# Local data and backups
+*.db
+*.db-shm
+*.db-wal
+*.bak
+
+# IDE and machine-specific
+.vs/
+*.user
+*.suo
+
+# Secrets and certificates
+*.pfx
+App.config
+appsettings.*.local.json
+.env
+.env.*

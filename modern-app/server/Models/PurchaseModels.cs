@@ -1,0 +1,10 @@
+namespace ElitePos.LocalService.Models;
+
+public sealed record PurchaseLineWriteRequest(long ItemId, int? UnitSettingId, decimal Quantity, decimal UnitPrice, DateTime? ExpiryDate = null, string? Barcode = null, string? BatchNo = null);
+public sealed record PurchaseLineMetadataUpdateRequest(DateTime? ExpiryDate = null, string? Barcode = null);
+public sealed record PurchaseWriteRequest(int SupplierPartnerId, string? InvoiceNo, DateTime? PurchaseDate, string? Status, int CurrencyId, string? Description, IReadOnlyList<PurchaseLineWriteRequest>? Lines, int? BranchId = null, int? SavedBy = null, decimal Discount = 0, string PurchaseType = "LOCAL", decimal ExchangeRateToBase = 1, int? CountryId = null);
+public sealed record PurchaseListItem(long PurchaseId, string InvoiceNo, DateTime PurchaseDate, int SupplierPartnerId, string SupplierName, string Status, int CurrencyId, string CurrencyCode, string CurrencySymbol, decimal Total, int LineCount, string PurchaseType = "LOCAL", decimal? LandedCostBase = null, int? CountryId = null);
+public sealed record PurchaseLineDetail(long PurchaseLineId, long ItemId, string ItemName, string? UnitName, decimal Quantity, decimal UnitPrice, decimal LineTotal, DateTime? ExpiryDate, string? Barcode, string? BatchNo);
+public sealed record PurchaseDetail(long PurchaseId, string InvoiceNo, DateTime PurchaseDate, int SupplierPartnerId, string SupplierName, string Status, int CurrencyId, string CurrencyCode, string CurrencySymbol, decimal Total, decimal Discount, string? Description, IReadOnlyList<PurchaseLineDetail> Lines, string PurchaseType = "LOCAL", decimal ExchangeRateToBase = 1, decimal? LandedCostBase = null, int? CountryId = null);
+public sealed record PurchaseAdditionalCostWriteRequest(string CostType, decimal Amount, int CurrencyId, decimal ExchangeRateToBase, string? Description = null);
+public sealed record PurchaseAdditionalCost(long PurchaseCostId, string CostType, decimal Amount, int CurrencyId, string CurrencyCode, string CurrencySymbol, decimal ExchangeRateToBase, decimal BaseAmount, string? Description);
