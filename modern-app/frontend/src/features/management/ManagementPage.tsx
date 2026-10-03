@@ -152,13 +152,15 @@ function partnerTypeLabel(code: string, t: typeof words.en) {
 
 function usePartnerLocations(countryName: string) {
   const [countries, setCountries] = useState<LocationCountry[]>([])
-  const [cities, setCities] = useState<LocationCity[]>([])
-  const country = countries.find(item => item.nameEn === countryName || item.nameAr === countryName)
+  const [loadedCities, setLoadedCities] = useState<{ countryId: number; cities: LocationCity[] } | null>(null)
+  const countryId = countries.find(item => item.nameEn === countryName || item.nameAr === countryName)?.countryId
   useEffect(() => { requestJson<LocationCountry[]>('/api/locations/countries').then(setCountries).catch(() => setCountries([])) }, [])
   useEffect(() => {
-    if (!country) { setCities([]); return }
-    requestJson<LocationCity[]>(`/api/locations/countries/${country.countryId}/cities`).then(setCities).catch(() => setCities([]))
-  }, [country?.countryId])
+    if (countryId === undefined) return
+    requestJson<LocationCity[]>(`/api/locations/countries/${countryId}/cities`).then(cities => cities, () => []).then(cities => setLoadedCities({ countryId, cities }))
+  }, [countryId])
+  // Cities belong to the selected country only; another country's list is never shown while the new one loads.
+  const cities = countryId !== undefined && loadedCities?.countryId === countryId ? loadedCities.cities : []
   return { countries, cities }
 }
 
@@ -249,10 +251,13 @@ function AddCustomer({ locale, onNavigate }: { locale: Locale; onNavigate: (dest
   const setValue = (key: keyof CustomerForm, value: string) => setForm(current => ({ ...current, [key]: value }))
   const requiredError = submitted && !form.businessName.trim() ? t.required : ''
   const partnerTypeError = submitted && !form.partnerTypeCode ? t.required : ''
-  useEffect(() => {
+  // Once partner types load, swap the CLIENT placeholder for the stored code of the Client type.
+  const [typesApplied, setTypesApplied] = useState<PartnerTypeSetting[] | null>(null)
+  if (typesApplied !== partnerTypes) {
+    setTypesApplied(partnerTypes)
     const defaultType = partnerTypes.find(item => item.valueEn === 'Client' || item.valueAr === 'عميل')
     if (defaultType?.code) setForm(current => current.partnerTypeCode === 'CLIENT' ? { ...current, partnerTypeCode: defaultType.code! } : current)
-  }, [partnerTypes])
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSubmitted(true); setError('')
     if (!form.businessName.trim() || !form.partnerTypeCode) { setError(t.validation); return }
@@ -285,8 +290,7 @@ function CustomerDetailsPage({ locale, publicId, onNavigate }: { locale: Locale;
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
   const [detailTab, setDetailTab] = useState<'info' | 'accounts'>('info')
-  const [accounts, setAccounts] = useState<PartnerAccount[]>([])
-  const [accountsLoading, setAccountsLoading] = useState(false)
+  const [loadedAccounts, setLoadedAccounts] = useState<{ customer: CustomerDetails; accounts: PartnerAccount[] } | null>(null)
   useEffect(() => {
     let active = true
     requestJson<CustomerDetails>(`/api/partners/${encodeURIComponent(publicId)}`)
@@ -297,9 +301,10 @@ function CustomerDetailsPage({ locale, publicId, onNavigate }: { locale: Locale;
   }, [locale, publicId])
   useEffect(() => {
     if (detailTab !== 'accounts' || !customer) return
-    setAccountsLoading(true)
-    void fetch(`/api/transactions/partner/by-public/${customer.publicId}/balances`).then(response => response.ok ? response.json() : []).then(value => setAccounts(value)).catch(() => setAccounts([])).finally(() => setAccountsLoading(false))
+    void fetch(`/api/transactions/partner/by-public/${customer.publicId}/balances`).then(response => response.ok ? response.json() as Promise<PartnerAccount[]> : []).catch(() => []).then(accounts => setLoadedAccounts({ customer, accounts }))
   }, [detailTab, customer])
+  const accounts = loadedAccounts?.customer === customer ? loadedAccounts.accounts : []
+  const accountsLoading = detailTab === 'accounts' && Boolean(customer) && loadedAccounts?.customer !== customer
 
   if (loading) return <LoadingState label={t.loading} />
   if (error || !customer) return <div className="management-page"><ErrorState title={error || t.loadError} /><Button onClick={() => onNavigate('customers')}>{t.back}</Button></div>
@@ -334,10 +339,13 @@ function EditPartner({ locale, customer, onCancel, onSaved }: { locale: Locale; 
   const [error, setError] = useState('')
   const [active, setActive] = useState(customer.status === 'ACTIVE')
   const set = (key: keyof typeof form, value: string) => setForm(current => ({ ...current, [key]: value }))
-  useEffect(() => {
+  // Map the customer's stored type code onto the loaded partner type settings.
+  const [typesApplied, setTypesApplied] = useState<{ types: PartnerTypeSetting[]; code: string } | null>(null)
+  if (typesApplied?.types !== partnerTypes || typesApplied.code !== customer.partnerTypeCode) {
+    setTypesApplied({ types: partnerTypes, code: customer.partnerTypeCode })
     const selected = partnerTypes.find(item => item.valueEn === (customer.partnerTypeCode === 'CLIENT' ? 'Client' : customer.partnerTypeCode === 'SUPPLIER' ? 'Supplier' : customer.partnerTypeCode === 'BOTH' ? 'Client & supplier' : ''))
     if (selected?.code) setForm(current => ({ ...current, partnerTypeCode: selected.code! }))
-  }, [customer.partnerTypeCode, partnerTypes])
+  }
   async function save() {
     if (!form.partnerName.trim() || !form.partnerTypeCode) { setError(ar ? 'أدخل اسم الشريك ونوعه.' : 'Enter the partner name and type.'); return }
     setSaving(true); setError('')
