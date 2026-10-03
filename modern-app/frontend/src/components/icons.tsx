@@ -41,7 +41,14 @@ export type IconName =
   | "calculator"
   | "coins"
   | "sum"
-  | "barcode";
+  | "barcode"
+  | "menu"
+  | "trash"
+  | "user"
+  | "lock"
+  | "save"
+  | "close"
+  | "arrow-left";
 
 export function Icon({
   name,
@@ -285,6 +292,45 @@ export function Icon({
     barcode: (
       <>
         <path d="M4 5v14M7 5v14M10 5v14M14 5v14M17 5v14M20 5v14" />
+      </>
+    ),
+    menu: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M9 4v16" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+      </>
+    ),
+    user: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
+      </>
+    ),
+    lock: (
+      <>
+        <rect x="4" y="10" width="16" height="11" rx="2.5" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      </>
+    ),
+    save: (
+      <>
+        <path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V3Z" />
+        <path d="M8 3v5h7V3M8 21v-7h8v7" />
+      </>
+    ),
+    close: (
+      <>
+        <path d="M6 6l12 12M18 6 6 18" />
+      </>
+    ),
+    "arrow-left": (
+      <>
+        <path d="M20 12H4m6-6-6 6 6 6" />
       </>
     ),
   };

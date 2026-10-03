@@ -74,7 +74,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
       {...rest as Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onChange'>}
     >
       <span className="searchable-select-value">{selectedOption?.label ?? placeholder?.label ?? '—'}</span>
-      <span className="searchable-select-chevron" aria-hidden="true">⌄</span>
+      <span className="searchable-select-chevron" aria-hidden="true"><Icon name="chevron-down" size={17} /></span>
     </button>
     {name && <input type="hidden" name={name} value={currentValue} required={required} />}
     {open && !disabled && <div className="searchable-select-menu" role="listbox" aria-label={ariaLabel}>
@@ -144,7 +144,7 @@ export function Modal({ open, title, titleIcon, description, children, onClose, 
   if (!open) return null
   return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && !busy && onClose()}>
     <section className="modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="shared-modal-title" tabIndex={-1}>
-      <header className="modal-header"><div className="modal-heading"><h2 id="shared-modal-title">{titleIcon && <Icon name={titleIcon} size={21} />}{title}</h2>{description && <p>{description}</p>}</div><IconButton label={closeLabel} disabled={busy} onClick={onClose}>×</IconButton></header>
+      <header className="modal-header"><div className="modal-heading"><h2 id="shared-modal-title">{titleIcon && <Icon name={titleIcon} size={21} />}{title}</h2>{description && <p>{description}</p>}</div><IconButton label={closeLabel} disabled={busy} onClick={onClose}><Icon name="close" size={20} /></IconButton></header>
       <div className="modal-body">{children}</div>{footer && <footer className="modal-footer">{footer}</footer>}
     </section>
   </div>
