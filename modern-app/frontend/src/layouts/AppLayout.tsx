@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Button, IconButton } from '../components/shared'
+import { IconButton } from '../components/shared'
 import { Icon, type IconName } from '../components/icons'
 
 export type Locale = 'en' | 'ar'
@@ -82,12 +82,14 @@ export function AppLayout({ locale, onLocaleChange, themeMode, onThemeModeChange
     </aside>
     <div className="main-column">
       <header className="top-bar">
-        <div className="header-leading"><Button variant="quiet" className="sidebar-toggle" aria-label={labels.collapse} title={labels.collapse} onClick={() => setCollapsed(value => !value)}>{collapsed ? (rtl ? '›' : '‹') : (rtl ? '‹' : '›')}</Button><div className="breadcrumb"><span>{labels.workspace}</span>{(transferActive || receiptsActive || expensesActive) && <><span className="breadcrumb-separator" aria-hidden="true">/</span><span>{labels.accounts}</span></>}<span className="breadcrumb-separator" aria-hidden="true">/</span><strong>{title}</strong></div></div>
+        <div className="header-leading"><IconButton variant="quiet" className="sidebar-toggle" label={labels.collapse} aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}><Icon name="menu" size={20} /></IconButton><div className="breadcrumb"><span>{labels.workspace}</span>{(transferActive || receiptsActive || expensesActive) && <><span className="breadcrumb-separator" aria-hidden="true">/</span><span>{labels.accounts}</span></>}<span className="breadcrumb-separator" aria-hidden="true">/</span><strong>{title}</strong></div></div>
         <div className="top-actions">
           {onExchangeRates && <IconButton variant="quiet" className="exchange-rates-toggle" label={rtl ? 'أسعار الصرف' : 'Exchange rates'} title={rtl ? 'أسعار الصرف' : 'Exchange rates'} onClick={onExchangeRates}><Icon name="currency" size={21} /></IconButton>}
           <IconButton className="theme-toggle" variant="quiet" label={labels.theme} title={labels.theme} onClick={() => onThemeModeChange(themeMode === 'light' ? 'dark' : 'light')}><Icon name={themeMode === 'light' ? 'moon' : 'sun'} size={21} /></IconButton>
           <IconButton variant="quiet" className="locale-toggle" label={languageTitle} title={languageTitle} onClick={() => onLocaleChange(rtl ? 'en' : 'ar')}>{languageTarget}</IconButton>
-          <button type="button" className="user-chip user-chip-button" onClick={onLogout} title={rtl ? 'تسجيل الخروج' : 'Log out'}><span className="user-avatar">{(operatorName ?? (rtl ? 'م' : 'E')).slice(0, 1).toUpperCase()}</span><span className="user-name"><strong>{labels.operator}</strong>{branchName && <small>{branchName}</small>}</span><Icon name="logout" size={18} className="user-logout-icon" /></button>
+          <span className="top-divider" aria-hidden="true" />
+          <div className="user-chip"><span className="user-avatar" aria-hidden="true">{(operatorName ?? (rtl ? 'م' : 'E')).slice(0, 1).toUpperCase()}</span><span className="user-name"><strong>{labels.operator}</strong>{branchName && <small>{branchName}</small>}</span></div>
+          {onLogout && <IconButton variant="quiet" className="logout-button" label={rtl ? 'تسجيل الخروج' : 'Log out'} onClick={onLogout}><Icon name="logout" size={19} className="icon-flip-rtl" /></IconButton>}
         </div>
       </header>
       <main className="main-content">{children}</main>

@@ -47,12 +47,7 @@ public sealed class PosMigrationRunner(DbConnectionFactory factory)
                 history.CommandText = "IF OBJECT_ID(N'dbo.PosSchemaMigrations', N'U') IS NULL CREATE TABLE dbo.PosSchemaMigrations (Version int NOT NULL CONSTRAINT PK_PosSchemaMigrations PRIMARY KEY, Name nvarchar(200) NOT NULL, AppliedAt datetime2(3) NOT NULL CONSTRAINT DF_PosSchemaMigrations_AppliedAt DEFAULT (SYSUTCDATETIME())); SELECT COALESCE(MAX(Version),0) FROM dbo.PosSchemaMigrations";
                 var version = Convert.ToInt32(await history.ExecuteScalarAsync(cancellationToken));
 
-                var migrations = Assembly.GetExecutingAssembly().GetManifestResourceNames()
-                    .Select(name => new { Name = name, Match = Regex.Match(name, @"(?<version>\d+)_(?<title>[^.]+)\.sql$", RegexOptions.IgnoreCase) })
-                    .Where(item => item.Match.Success)
-                    .Select(item => new { item.Name, Version = int.Parse(item.Match.Groups["version"].Value), Title = item.Match.Groups["title"].Value.Replace('_', ' ') })
-                    .OrderBy(item => item.Version)
-                    .ToArray();
+                var migrations = GetMigrations();
 
                 foreach (var migration in migrations.Where(item => item.Version > version))
                 {
@@ -82,5 +77,15 @@ public sealed class PosMigrationRunner(DbConnectionFactory factory)
             throw;
         }
     }
+
+    // Only scripts under Data/Pos/Migrations belong to this stream; Management scripts are embedded in the same assembly.
+    internal static IReadOnlyList<(string Name, int Version, string Title)> GetMigrations() =>
+        Assembly.GetExecutingAssembly().GetManifestResourceNames()
+            .Where(name => name.Contains(".Data.Pos.Migrations.", StringComparison.Ordinal))
+            .Select(name => new { Name = name, Match = Regex.Match(name, @"(?<version>\d+)_(?<title>[^.]+)\.sql$", RegexOptions.IgnoreCase) })
+            .Where(item => item.Match.Success)
+            .Select(item => (item.Name, Version: int.Parse(item.Match.Groups["version"].Value), Title: item.Match.Groups["title"].Value.Replace('_', ' ')))
+            .OrderBy(item => item.Version)
+            .ToArray();
 }
 

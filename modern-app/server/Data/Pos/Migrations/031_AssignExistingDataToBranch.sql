@@ -1,6 +1,11 @@
+-- A new customer database has no branch yet, so create the main branch that existing data is assigned to.
+IF NOT EXISTS (SELECT 1 FROM dbo.Branches)
+BEGIN
+    INSERT INTO dbo.Branches (BranchCode, NameAr, NameEn, IsActive, SortOrder) VALUES (N'BR-PENDING-MAIN', N'الفرع الرئيسي', N'Main branch', 1, 1);
+    UPDATE dbo.Branches SET BranchCode = CONCAT(N'BR-', RIGHT(CONCAT(N'000000', CONVERT(nvarchar(20), BranchId)), 6)) WHERE BranchCode = N'BR-PENDING-MAIN';
+END;
+
 DECLARE @branchId int = (SELECT TOP (1) BranchId FROM dbo.Branches ORDER BY BranchId);
-IF @branchId IS NULL
-    THROW 51031, 'A branch must exist before assigning POS data.', 1;
 
 IF COL_LENGTH('dbo.Treasuries', 'BranchId') IS NULL
     ALTER TABLE dbo.Treasuries ADD BranchId int NULL;

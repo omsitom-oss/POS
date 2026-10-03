@@ -1,0 +1,208 @@
+/*
+ * Elite POS design tokens: the single source of color, type, spacing, radius and elevation.
+ * Shared components and pages read these semantic names only. Light is the default;
+ * :root[data-theme='dark'] redefines the same names, so no component needs a dark-mode override.
+ */
+:root {
+  color-scheme: light;
+
+  /* Typography */
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', 'Simplified Arabic', Tahoma, system-ui, -apple-system, 'Noto Sans', 'Noto Naskh Arabic', Arial, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  --font-caption: 13px;
+  --font-helper: 13px;
+  --font-label: 14px;
+  --font-body: 15px;
+  --font-table: 14px;
+  --font-button: 14px;
+  --font-section: 18px;
+  --font-title: 26px;
+  --line-body: 1.55;
+
+  /* Spacing (4px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+
+  /* Shape */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Sizing */
+  --control-height: 42px;
+  --row-compact: 46px;
+  --row-comfortable: 54px;
+  --sidebar-width: 252px;
+  --sidebar-collapsed-width: 76px;
+  --topbar-height: 64px;
+
+  /* Neutral surfaces */
+  --background: #f4f6f8;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-sunken: #eef2f5;
+  --surface-hover: #f1f5f8;
+  --border: #e1e7ec;
+  --border-strong: #cad4dc;
+  --text-primary: #102030;
+  --text-secondary: #46596b;
+  --text-muted: #6a7b8c;
+  --text-inverse: #ffffff;
+
+  /* Brand */
+  --primary: #0b7d78;
+  --primary-hover: #086663;
+  --primary-soft: #e3f3f1;
+  --primary-strong: #075a57;
+  --on-brand: #ffffff;
+  --focus-ring: color-mix(in srgb, var(--primary) 45%, transparent);
+
+  /* Status */
+  --success: #15784b;
+  --success-soft: #e5f5ec;
+  --warning: #965b06;
+  --warning-soft: #fdf2dc;
+  --danger: #b4363a;
+  --danger-soft: #fdecec;
+  --info: #2462a6;
+  --info-soft: #e8f0fb;
+  --status-active-bg: var(--success-soft);
+  --status-active-text: var(--success);
+  --status-inactive-bg: var(--danger-soft);
+  --status-inactive-text: var(--danger);
+
+  /* Interaction */
+  --hover: var(--surface-hover);
+  --selected: #e6f4f2;
+  --input-background: #ffffff;
+  --table-header: #f7f9fb;
+  --backdrop: rgb(10 22 33 / 45%);
+
+  /* Buttons */
+  --button-primary-bg: var(--primary);
+  --button-primary-text: #ffffff;
+  --button-primary-hover: var(--primary-hover);
+  --button-primary-border: var(--primary);
+  --button-secondary-bg: var(--surface);
+  --button-secondary-text: var(--text-primary);
+  --button-secondary-hover: var(--surface-hover);
+  --button-secondary-border: var(--border-strong);
+  --button-outline-bg: transparent;
+  --button-outline-text: var(--primary);
+  --button-outline-border: color-mix(in srgb, var(--primary) 45%, var(--border));
+  --button-outline-hover: var(--primary-soft);
+  --button-ghost-text: var(--text-secondary);
+  --button-ghost-hover: var(--surface-hover);
+  --button-danger-bg: var(--surface);
+  --button-danger-text: var(--danger);
+  --button-danger-border: color-mix(in srgb, var(--danger) 35%, var(--border));
+  --button-danger-hover: var(--danger-soft);
+  --button-icon-text: var(--text-secondary);
+  --button-icon-hover: var(--surface-hover);
+
+  /* Tooltip */
+  --tooltip-background: #102030;
+  --tooltip-text: #ffffff;
+  --tooltip-border: #2a3c4d;
+
+  /* Navigation */
+  --nav-background: var(--surface);
+  --nav-border: var(--border);
+  --nav-text: var(--text-secondary);
+  --nav-text-muted: var(--text-muted);
+  --nav-hover: var(--surface-hover);
+  --nav-selected: var(--primary-soft);
+  --nav-selected-text: var(--primary-strong);
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px rgb(16 32 48 / 5%);
+  --shadow-sm: 0 1px 3px rgb(16 32 48 / 7%), 0 1px 2px rgb(16 32 48 / 4%);
+  --shadow-card: 0 1px 2px rgb(16 32 48 / 4%), 0 1px 1px rgb(16 32 48 / 2%);
+  --shadow-card-hover: 0 6px 16px rgb(16 32 48 / 8%), 0 1px 3px rgb(16 32 48 / 5%);
+  --shadow-popover: 0 12px 32px rgb(16 32 48 / 14%), 0 2px 6px rgb(16 32 48 / 6%);
+  --shadow-dialog: 0 24px 64px rgb(10 22 33 / 22%), 0 4px 12px rgb(10 22 33 / 8%);
+
+  /* Legacy aliases kept so older page styles resolve to the semantic tokens above. */
+  --text: var(--text-primary);
+  --ink: var(--text-primary);
+  --muted: var(--text-muted);
+  --subtle: var(--text-muted);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+  --paper: var(--surface);
+  --canvas: var(--background);
+  --nav: var(--nav-background);
+  --nav-muted: var(--nav-text-muted);
+  --nav-active: var(--nav-selected);
+  --accent: var(--primary);
+  --accent-dark: var(--primary-hover);
+  --accent-soft: var(--primary-soft);
+  --blue: var(--info);
+  --blue-soft: var(--info-soft);
+  --green: var(--success);
+  --green-soft: var(--success-soft);
+  --amber: var(--warning);
+  --amber-soft: var(--warning-soft);
+  --red: var(--danger);
+  --red-soft: var(--danger-soft);
+  --radius: var(--radius-sm);
+  --shadow: var(--shadow-card);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --background: #0d1620;
+  --surface: #131f2b;
+  --surface-elevated: #192836;
+  --surface-sunken: #0f1a24;
+  --surface-hover: #1e2e3d;
+  --border: #233345;
+  --border-strong: #31455a;
+  --text-primary: #e8eef4;
+  --text-secondary: #b4c2cf;
+  --text-muted: #8797a8;
+  --text-inverse: #0d1620;
+
+  --primary: #34c0b4;
+  --primary-hover: #55d2c7;
+  --primary-soft: #133632;
+  --primary-strong: #7fe0d6;
+
+  --success: #6fd3a0;
+  --success-soft: #153427;
+  --warning: #eec26a;
+  --warning-soft: #3a2e17;
+  --danger: #f39a97;
+  --danger-soft: #3d2124;
+  --info: #8bbcf0;
+  --info-soft: #182e45;
+
+  --selected: #16353a;
+  --input-background: #0f1a24;
+  --table-header: #172533;
+  --backdrop: rgb(2 8 14 / 65%);
+
+  --button-primary-text: #04201d;
+  --button-secondary-bg: var(--surface-elevated);
+
+  --tooltip-background: #e8eef4;
+  --tooltip-text: #102030;
+  --tooltip-border: #c6d2da;
+
+  --nav-background: #0f1a24;
+  --nav-border: #1c2a38;
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 35%);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 25%);
+  --shadow-card-hover: 0 8px 20px rgb(0 0 0 / 35%);
+  --shadow-popover: 0 14px 34px rgb(0 0 0 / 45%);
+  --shadow-dialog: 0 28px 72px rgb(0 0 0 / 55%);
+}
