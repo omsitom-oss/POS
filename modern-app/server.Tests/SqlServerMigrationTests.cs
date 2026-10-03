@@ -9,10 +9,20 @@ public sealed class SqlServerMigrationTests
 {
     private static readonly string? ServerConnectionString = Environment.GetEnvironmentVariable("POS_TEST_SQLSERVER");
 
+    // The POS tests create and drop [Hsain-Default], the legacy database name the migrations hard-code. They only run
+    // when the server is explicitly marked disposable, so pointing POS_TEST_SQLSERVER at a real server never touches it.
+    private static readonly bool ServerIsDisposable = Environment.GetEnvironmentVariable("POS_TEST_SQLSERVER_DISPOSABLE") == "true";
+
+    private static void SkipUnlessDisposableServer()
+    {
+        Assert.SkipWhen(string.IsNullOrWhiteSpace(ServerConnectionString), "POS_TEST_SQLSERVER is not set.");
+        Assert.SkipUnless(ServerIsDisposable, "POS_TEST_SQLSERVER_DISPOSABLE is not 'true'; these tests create and drop [Hsain-Default].");
+    }
+
     [Fact]
     public async Task Pos_migrations_build_a_new_customer_database_without_the_legacy_database()
     {
-        Assert.SkipWhen(string.IsNullOrWhiteSpace(ServerConnectionString), "POS_TEST_SQLSERVER is not set.");
+        SkipUnlessDisposableServer();
         var ct = TestContext.Current.CancellationToken;
         await LegacySource.DropAsync(ServerConnectionString!, ct);
         await using var database = await ScratchDatabase.CreateAsync(ServerConnectionString!, ct);
@@ -29,7 +39,7 @@ public sealed class SqlServerMigrationTests
     [Fact]
     public async Task Pos_migrations_import_reference_data_from_the_legacy_database()
     {
-        Assert.SkipWhen(string.IsNullOrWhiteSpace(ServerConnectionString), "POS_TEST_SQLSERVER is not set.");
+        SkipUnlessDisposableServer();
         var ct = TestContext.Current.CancellationToken;
         await LegacySource.EnsureAsync(ServerConnectionString!, ct);
         try
