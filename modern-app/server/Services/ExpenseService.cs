@@ -44,7 +44,7 @@ public sealed class ExpenseService(DbConnectionFactory factory, TransactionServi
     {
         await using var account = db.CreateCommand(); account.CommandText = "SELECT AccountCode FROM dbo.Accounts WHERE AccountCode=@code AND AccountType='EXPENSE' AND IsActive=1"; Add(account, "@code", request.ExpenseAccountId!.Trim(), DbType.String, 50);
         var code = await account.ExecuteScalarAsync(ct) as string; if (string.IsNullOrWhiteSpace(code)) throw new ExpenseException("The selected expense account is not active.", 400);
-        await using var treasury = db.CreateCommand(); treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id"; Add(treasury, "@id", request.TreasuryId, DbType.Int32); await using var reader = await treasury.ExecuteReaderAsync(ct);
+        await using var treasury = db.CreateCommand(); treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id AND BranchId=@branch"; Add(treasury, "@id", request.TreasuryId, DbType.Int32); Add(treasury, "@branch", request.BranchId, DbType.Int32); await using var reader = await treasury.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw new ExpenseException("Treasury was not found.", 404); if (!reader.GetBoolean(1)) throw new ExpenseException("The selected treasury is inactive."); return (code, reader.GetInt32(0));
     }
 

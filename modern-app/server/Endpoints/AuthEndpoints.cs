@@ -13,12 +13,10 @@ public static class AuthEndpoints
         group.MapPost("/login", async (LoginRequest request, AuthService service, CancellationToken ct) =>
         {
             var outcome = await service.LoginAsync(request, ct);
-            return outcome.Status switch
-            {
-                LoginStatus.Success => Results.Ok(outcome.Result),
-                LoginStatus.LockedOut => Results.Problem("Too many failed sign-in attempts. Try again later.", statusCode: StatusCodes.Status429TooManyRequests),
-                _ => Results.Problem("Invalid username or password.", statusCode: StatusCodes.Status401Unauthorized),
-            };
+            // A locked account gets the same answer as a wrong password, so the response never confirms that a user name exists.
+            return outcome.Status == LoginStatus.Success
+                ? Results.Ok(outcome.Result)
+                : Results.Problem("Invalid username or password. After several failed attempts the account is locked for a few minutes.", statusCode: StatusCodes.Status401Unauthorized);
         }).AllowAnonymous();
         group.MapPost("/logout", async (ClaimsPrincipal user, AuthService service, CancellationToken ct) =>
         {

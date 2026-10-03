@@ -5,7 +5,11 @@ using Microsoft.Data.Sqlite;
 
 namespace ElitePos.LocalService.Data;
 
-public sealed class DbConnectionFactory(DatabaseOptions options, IConfiguration configuration, IHostEnvironment environment)
+// Registered only by the automated tests, which run against a disposable SQL Server container with a SQL login.
+// Nothing in the app registers it, so no setting or environment name can turn it on at a customer.
+public sealed class SqlCredentialsTestAllowance;
+
+public sealed class DbConnectionFactory(DatabaseOptions options, IConfiguration configuration, IHostEnvironment environment, SqlCredentialsTestAllowance? testAllowance = null)
 {
     public string ProviderName => options.Provider;
 
@@ -20,8 +24,7 @@ public sealed class DbConnectionFactory(DatabaseOptions options, IConfiguration 
             }
 
             var builder = new SqlConnectionStringBuilder(connectionString);
-            // SQL credentials are accepted only by the automated tests, which run against a disposable SQL Server container.
-            if (!builder.IntegratedSecurity && !environment.IsEnvironment("Testing"))
+            if (!builder.IntegratedSecurity && testAllowance is null)
             {
                 throw new InvalidOperationException(
                     "SQL Server connections must use Windows Integrated Security. SQL credentials are not supported here.");

@@ -16,8 +16,10 @@ public sealed class TreasuryTransferService(DbConnectionFactory factory, Transac
 
         var date = (request.TransferDate ?? DateTime.UtcNow).Date;
         await using var db = factory.CreateConnection(); await db.OpenAsync(ct);
-        var source = await ReadTreasuryAsync(db, request.SourceTreasuryId, ct);
-        var destination = await ReadTreasuryAsync(db, request.DestinationTreasuryId, ct);
+        // Both ends must belong to the transfer's branch; the ledger carries one branch per move, so cross-branch transfers are not supported.
+        var branchId = request.BranchId ?? throw new TreasuryTransferException("Branch is required.");
+        var source = await ReadTreasuryAsync(db, request.SourceTreasuryId, branchId, ct);
+        var destination = await ReadTreasuryAsync(db, request.DestinationTreasuryId, branchId, ct);
         var available = await ReadBalanceAsync(db, source.TreasuryId, ct);
         if (request.SourceAmount > available + 0.0001m)
             throw new TreasuryTransferException("The transfer amount exceeds the available source treasury balance.");
@@ -38,9 +40,9 @@ public sealed class TreasuryTransferService(DbConnectionFactory factory, Transac
         return new TreasuryTransferResult(transaction.MoveNo, date, source.TreasuryId, destination.TreasuryId, source.CurrencyId, destination.CurrencyId, request.SourceAmount, request.DestinationAmount, request.ExchangeRate, transaction);
     }
 
-    private static async Task<(int TreasuryId, int CurrencyId)> ReadTreasuryAsync(DbConnection db, int treasuryId, CancellationToken ct)
+    private static async Task<(int TreasuryId, int CurrencyId)> ReadTreasuryAsync(DbConnection db, int treasuryId, int branchId, CancellationToken ct)
     {
-        await using var command = db.CreateCommand(); command.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id"; Add(command, "@id", treasuryId, DbType.Int32);
+        await using var command = db.CreateCommand(); command.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id AND BranchId=@branch"; Add(command, "@id", treasuryId, DbType.Int32); Add(command, "@branch", branchId, DbType.Int32);
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw new TreasuryTransferException("Treasury was not found.", 404);
         if (!reader.GetBoolean(1)) throw new TreasuryTransferException("Inactive treasuries cannot be used.");
