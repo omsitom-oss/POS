@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (build, test, migrations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: modern-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      # Disposable SQL Server so every POS and Management migration is applied to an empty database.
+      # The sa password is generated per run and never stored in the repository.
+      - name: Start SQL Server
+        run: |
+          password="Ci-$(openssl rand -hex 16)-Aa1!"
+          echo "::add-mask::$password"
+          docker run -d --name mssql -e ACCEPT_EULA=Y -e "MSSQL_SA_PASSWORD=$password" -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+          for attempt in $(seq 1 60); do
+            if docker exec mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$password" -C -Q "SELECT 1" >/dev/null 2>&1; then
+              echo "POS_TEST_SQLSERVER=Server=localhost,1433;User ID=sa;Password=$password;TrustServerCertificate=True;Encrypt=False" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs mssql
+          exit 1
+
+      - name: Build
+        run: |
+          dotnet build server/server.csproj --configuration Release
+          dotnet build server.Tests/server.Tests.csproj --configuration Release
+
+      - name: Test
+        run: dotnet test server.Tests/server.Tests.csproj --configuration Release --no-build --logger "console;verbosity=normal"
+
+  frontend:
+    name: Frontend (lint, build, test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: modern-app/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: modern-app/frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
