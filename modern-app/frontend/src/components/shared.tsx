@@ -1,5 +1,6 @@
 import { Children, isValidElement, useEffect, useRef, useState, type ChangeEvent, type HTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { Icon, type IconName } from './icons'
+import { pageSizeOptions, type Pager } from './usePagination'
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'quiet' | 'danger' | 'icon'; size?: 'small' | 'medium'; loading?: boolean }
 
@@ -108,9 +109,12 @@ export function LoadingState({ label = 'Loading…' }: { label?: string }) { ret
 export function EmptyState({ title, detail }: { title: string; detail?: string }) { return <div className="state-card empty-state"><span className="empty-mark">—</span><strong>{title}</strong>{detail && <span>{detail}</span>}</div> }
 export function ErrorState({ title, detail }: { title: string; detail?: string }) { return <div className="state-card error-state" role="alert"><span className="error-mark">!</span><strong>{title}</strong>{detail && <span>{detail}</span>}</div> }
 
-export function TableFooter({ total, locale = 'en' }: { total: number; locale?: 'ar' | 'en' }) {
+export function TableFooter({ total, locale = 'en', pager }: { total: number; locale?: 'ar' | 'en'; pager?: Pager }) {
   const ar = locale === 'ar'
-  return <div className="table-footer"><span className="table-total">{ar ? 'الإجمالي' : 'Total'}&nbsp; {total}</span><div className="table-pagination-controls"><label className="rows-per-page"><span>{ar ? 'عدد الصفوف' : 'Lines per page'}</span><Select value="15" disabled aria-label={ar ? 'عدد الصفوف في الصفحة' : 'Lines per page'}><option value="15">15</option></Select></label><div className="pagination"><Button size="small" className="pagination-arrow" aria-label={ar ? 'السابق' : 'Previous'} disabled>‹</Button><span className="pagination-current">1</span><span className="pagination-more">…</span><span>1</span><Button size="small" className="pagination-arrow" aria-label={ar ? 'التالي' : 'Next'} disabled>›</Button></div></div></div>
+  const page = pager?.page ?? 0
+  const pageCount = pager?.pageCount ?? 1
+  const pageSize = pager?.pageSize ?? pageSizeOptions[0]
+  return <div className="table-footer"><span className="table-total">{ar ? 'الإجمالي' : 'Total'}&nbsp; {total}</span><div className="table-pagination-controls"><label className="rows-per-page"><span>{ar ? 'عدد الصفوف' : 'Lines per page'}</span><Select value={String(pageSize)} disabled={!pager} onChange={event => pager?.onPageSizeChange(Number(event.target.value))} aria-label={ar ? 'عدد الصفوف في الصفحة' : 'Lines per page'}>{pageSizeOptions.map(size => <option key={size} value={size}>{size}</option>)}</Select></label><div className="pagination"><Button size="small" className="pagination-arrow" aria-label={ar ? 'السابق' : 'Previous'} disabled={page === 0} onClick={() => pager?.onPageChange(page - 1)}>‹</Button><span className="pagination-current">{page + 1}</span><span className="pagination-more">…</span><span>{pageCount}</span><Button size="small" className="pagination-arrow" aria-label={ar ? 'التالي' : 'Next'} disabled={page + 1 >= pageCount} onClick={() => pager?.onPageChange(page + 1)}>›</Button></div></div></div>
 }
 
 export function Tabs({ tabs, value, onChange }: { tabs: Array<{ id: string; label: string }>; value: string; onChange: (id: string) => void }) {
