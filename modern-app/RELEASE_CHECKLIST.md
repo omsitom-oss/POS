@@ -34,6 +34,11 @@ Use this file as the live implementation and verification record. Mark each item
 - [x] Browser smoke tests in Light/Dark and English/Arabic.
 - [ ] Document remaining limitations, if any.
 
+## Upgrade notes
+
+- After migration 046, administrators must trim roles in Settings > Roles: every existing role receives the day-to-day permissions, including `TREASURY_MANAGE` and `PURCHASES_MANAGE`.
+- Treasuries are branch-scoped. Every existing treasury starts in the first branch, so move the other branches' tills in Settings > Treasuries before their users post documents. See `docs/security/authentication.md`.
+
 ## Progress log
 
 - 2026-09-29: checklist created before implementation.

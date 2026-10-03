@@ -7,7 +7,7 @@
 - Tokens are random 256-bit values. Only their SHA-256 hash is stored, in `dbo.UserSessions`.
 - A session ends after `Auth:SessionIdleMinutes` without a request (default 120) or `Auth:SessionLifetimeMinutes` after login (default 720).
 - `POST /api/auth/logout` ends the current session. Deactivating a user, deactivating their branch, resetting or setting their password, or a password change all end the user's other sessions at once.
-- After `Auth:MaxFailedLogins` wrong passwords in a row (default 5) the account is locked for `Auth:LockoutMinutes` (default 15) and login answers 429.
+- After `Auth:MaxFailedLogins` wrong passwords in a row (default 5) the account is locked for `Auth:LockoutMinutes` (default 15). A locked account gets the same 401 as a wrong password, so login never confirms that a user name exists.
 
 Opaque server-side sessions were chosen over JWTs because the service is local with one database: revocation is immediate, permission changes apply on the next request, and there is no signing key to protect.
 
@@ -37,7 +37,7 @@ Each permission code is an authorization policy (`server/Security/PermissionCode
 
 | Permission | Allows |
 |---|---|
-| (signed in) | Reading reference data: items, partners, settings, locations, currencies, branches, treasuries, banks, company profile, approval policies |
+| (signed in) | Reading reference data: items, partners, settings, locations, currencies, banks, company profile, approval policies, and the user's own branch and its treasuries |
 | `USER_MANAGEMENT` | Users, roles and the permission list |
 | `SETTINGS_MANAGE` | Changing settings, locations, company profile, currencies, branches, treasuries, banks, approval policies |
 | `EXCHANGE_RATES_EDIT` | Changing currency rates |
@@ -60,5 +60,13 @@ The branch comes from the signed-in user, not from the request:
 - List reads (sales, purchases, receipts, expenses, statements, chart of accounts, report summary) return only the user's branch. Users with `ALL_BRANCHES` see every branch, or one branch with `?branchId=`.
 - Stock, batches and inventory requests are per branch and default to the user's branch.
 - A purchase or disposal request from another branch answers 404.
+- Treasuries belong to a branch. The treasury list shows the user's branch only (every branch with `ALL_BRANCHES`). A sale, receipt, payment, expense, transfer or manual transaction can only use treasuries of the document's branch; any other treasury answers 404. Both ends of a transfer must be in the same branch, so moving money between branches is not supported yet.
+- New treasuries are created in the user's branch. A user with `ALL_BRANCHES` can pick the branch, or move an existing treasury, in Settings > Treasuries. Users without it can only edit their own branch's treasuries.
+- The branch list shows only the user's branch unless they have `ALL_BRANCHES`.
 
-Not branch-scoped yet: items, partners and treasuries are shared catalogues (their `BranchId` column is always the first branch today), and partner balances are company-wide.
+Not branch-scoped yet: items and partners are shared catalogues, and partner balances are company-wide.
+
+## Upgrading an existing install
+
+- Migration 046 gives every existing role the day-to-day permissions, including `TREASURY_MANAGE` and `PURCHASES_MANAGE`. Review every role in Settings > Roles after upgrading and remove what each job does not need; until then cashiers keep the right to record manual transactions.
+- Migration 031 put every existing treasury in the first branch. Until an administrator moves each other branch's tills to that branch in Settings > Treasuries, users of other branches cannot post sales, receipts or expenses.

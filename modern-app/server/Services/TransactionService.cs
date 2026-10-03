@@ -63,7 +63,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
         try
         {
             var branchId = request.BranchId ?? await ReadDefaultBranchAsync(db, tx, ct);
-            await ValidateReferencesAsync(db, tx, request, lines, ct);
+            await ValidateReferencesAsync(db, tx, request, branchId, lines, ct);
             var moveNo = await NextMoveNoAsync(db, tx, ct);
             var ids = new List<long>(lines.Count);
 
@@ -169,7 +169,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
             throw new TransactionException($"The transaction is not balanced. Debit is {debit} and credit is {credit}.");
     }
 
-    private static async Task ValidateReferencesAsync(DbConnection db, DbTransaction tx, TransactionWriteRequest request, IReadOnlyList<TransactionLineRequest> lines, CancellationToken ct)
+    private static async Task ValidateReferencesAsync(DbConnection db, DbTransaction tx, TransactionWriteRequest request, int branchId, IReadOnlyList<TransactionLineRequest> lines, CancellationToken ct)
     {
         foreach (var currencyId in lines.Select(line => line.CurrencyId ?? request.CurrencyId).Distinct())
         {
@@ -180,8 +180,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
             if (!Convert.ToBoolean(value)) throw new TransactionException("The selected currency is inactive.");
         }
 
-        foreach (var branchId in lines.Select(_ => request.BranchId).Where(id => id.HasValue).Select(id => id!.Value).Distinct())
-            await EnsureExistsAsync(db, tx, "Branches", "BranchId", branchId, "Branch", ct);
+        await EnsureExistsAsync(db, tx, "Branches", "BranchId", branchId, "Branch", ct);
         if (request.SavedBy.HasValue)
             await EnsureExistsAsync(db, tx, "Users", "UserId", request.SavedBy.Value, "User", ct);
 
@@ -195,7 +194,8 @@ public sealed class TransactionService(DbConnectionFactory factory)
 
         foreach (var line in lines.Where(line => line.TreasuryId.HasValue))
         {
-            await using var treasury = db.CreateCommand(); treasury.Transaction = tx; treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id"; Add(treasury, "@id", line.TreasuryId, DbType.Int32);
+            await using var treasury = db.CreateCommand(); treasury.Transaction = tx; // A treasury from another branch answers as not found, so a document can only move its own branch's money.
+            treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id AND BranchId=@branch"; Add(treasury, "@id", line.TreasuryId, DbType.Int32); Add(treasury, "@branch", branchId, DbType.Int32);
             await using var reader = await treasury.ExecuteReaderAsync(ct);
             if (!await reader.ReadAsync(ct)) throw new TransactionException("Treasury was not found.", 404);
             if (!reader.GetBoolean(1)) throw new TransactionException("An inactive treasury cannot be used in a transaction.");

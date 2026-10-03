@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using ElitePos.LocalService.Models;
 using ElitePos.LocalService.Security;
 using ElitePos.LocalService.Services;
@@ -9,7 +10,7 @@ public static class BranchEndpoints
     public static IEndpointRouteBuilder MapBranchEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/branches").RequireAuthorization(); var write = group.MapGroup("").RequirePermission(PermissionCodes.SettingsManage);
-        group.MapGet("", async (bool? includeInactive, BranchService service, CancellationToken ct) => Results.Ok(await service.GetAsync(includeInactive == true, ct)));
+        group.MapGet("", async (bool? includeInactive, ClaimsPrincipal user, BranchService service, CancellationToken ct) => Results.Ok((await service.GetAsync(includeInactive == true, ct)).Where(branch => user.CanAccessBranch(branch.BranchId))));
         write.MapPost("", (BranchWriteRequest request, BranchService service, CancellationToken ct) => Save(null, request, service, ct));
         write.MapPut("/{id:int}", (int id, BranchWriteRequest request, BranchService service, CancellationToken ct) => Save(id, request, service, ct));
         write.MapPost("/{id:int}/activate", (int id, BranchService service, CancellationToken ct) => SetActive(id, true, service, ct));

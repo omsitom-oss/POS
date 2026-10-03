@@ -21,13 +21,14 @@ public static class PasswordHasher
         try
         {
             var parts = encoded.Split('$');
-            if (parts.Length != 4 || !int.TryParse(parts[1], out var iterations)) return false;
+            if (parts.Length != 4 || !int.TryParse(parts[1], out var iterations) || iterations is < 1 or > 10_000_000) return false;
             var salt = Convert.FromBase64String(parts[2]);
             var expected = Convert.FromBase64String(parts[3]);
+            if (salt.Length == 0 || expected.Length == 0) return false;
             var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
             return CryptographicOperations.FixedTimeEquals(actual, expected);
         }
-        catch (FormatException)
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
         {
             return false;
         }
