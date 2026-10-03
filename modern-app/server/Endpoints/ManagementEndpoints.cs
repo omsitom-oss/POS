@@ -1,4 +1,5 @@
 using ElitePos.LocalService.Models;
+using ElitePos.LocalService.Security;
 using ElitePos.LocalService.Services;
 using Microsoft.Data.SqlClient;
 
@@ -8,7 +9,7 @@ public static class ManagementEndpoints
 {
     public static IEndpointRouteBuilder MapManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var management = endpoints.MapGroup("/api/management");
+        var management = endpoints.MapGroup("/api/management").RequirePermission(PermissionCodes.ManagementAccess);
         management.MapGet("/health", async (ManagementService service, CancellationToken cancellationToken) =>
         {
             try

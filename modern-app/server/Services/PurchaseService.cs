@@ -7,10 +7,15 @@ namespace ElitePos.LocalService.Services;
 
 public sealed class PurchaseService(DbConnectionFactory factory, TransactionService transactions)
 {
-    public async Task<IReadOnlyList<PurchaseListItem>> GetAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<PurchaseListItem>> GetAsync(int? branchId, CancellationToken ct)
     {
-        await using var db = await OpenAsync(ct); await using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT p.PurchaseId,p.InvoiceNo,p.PurchaseDate,p.SupplierPartnerId,partner.PartnerName,p.Status,p.CurrencyId,c.CurrencyCode,c.Symbol,p.Total,COUNT(l.PurchaseLineId),CASE WHEN p.PurchaseType=N'IMPORT' OR p.Description LIKE N'IMPORT:%' THEN N'IMPORT' ELSE p.PurchaseType END,p.LandedCostBase,p.CountryId FROM dbo.Purchases p JOIN dbo.Partners partner ON partner.PartnerId=p.SupplierPartnerId JOIN dbo.Currencies c ON c.CurrencyId=p.CurrencyId LEFT JOIN dbo.PurchaseLines l ON l.PurchaseId=p.PurchaseId GROUP BY p.PurchaseId,p.InvoiceNo,p.PurchaseDate,p.SupplierPartnerId,partner.PartnerName,p.Status,p.CurrencyId,c.CurrencyCode,c.Symbol,p.Total,p.PurchaseType,p.Description,p.LandedCostBase,p.CountryId ORDER BY p.PurchaseDate DESC,p.PurchaseId DESC";
+        await using var db = await OpenAsync(ct); await using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT p.PurchaseId,p.InvoiceNo,p.PurchaseDate,p.SupplierPartnerId,partner.PartnerName,p.Status,p.CurrencyId,c.CurrencyCode,c.Symbol,p.Total,COUNT(l.PurchaseLineId),CASE WHEN p.PurchaseType=N'IMPORT' OR p.Description LIKE N'IMPORT:%' THEN N'IMPORT' ELSE p.PurchaseType END,p.LandedCostBase,p.CountryId FROM dbo.Purchases p JOIN dbo.Partners partner ON partner.PartnerId=p.SupplierPartnerId JOIN dbo.Currencies c ON c.CurrencyId=p.CurrencyId LEFT JOIN dbo.PurchaseLines l ON l.PurchaseId=p.PurchaseId WHERE (@branch IS NULL OR p.BranchId=@branch) GROUP BY p.PurchaseId,p.InvoiceNo,p.PurchaseDate,p.SupplierPartnerId,partner.PartnerName,p.Status,p.CurrencyId,c.CurrencyCode,c.Symbol,p.Total,p.PurchaseType,p.Description,p.LandedCostBase,p.CountryId ORDER BY p.PurchaseDate DESC,p.PurchaseId DESC"; Add(cmd, "@branch", branchId, DbType.Int32);
         var rows = new List<PurchaseListItem>(); await using var reader = await cmd.ExecuteReaderAsync(ct); while (await reader.ReadAsync(ct)) rows.Add(new(reader.GetInt64(0),reader.GetString(1),reader.GetDateTime(2),reader.GetInt32(3),reader.GetString(4),reader.GetString(5),reader.GetInt32(6),reader.GetString(7),reader.GetString(8),reader.GetDecimal(9),reader.GetInt32(10),reader.GetString(11),reader.IsDBNull(12)?null:reader.GetDecimal(12),reader.IsDBNull(13)?null:reader.GetInt32(13))); return rows;
+    }
+    public async Task<int?> GetBranchIdAsync(long purchaseId, CancellationToken ct)
+    {
+        await using var db = await OpenAsync(ct); await using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT BranchId FROM dbo.Purchases WHERE PurchaseId=@id"; Add(cmd, "@id", purchaseId, DbType.Int64);
+        return await cmd.ExecuteScalarAsync(ct) is { } value and not DBNull ? Convert.ToInt32(value) : null;
     }
     public async Task<PurchaseDetail?> GetByIdAsync(long id, CancellationToken ct)
     {
@@ -153,7 +158,7 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
                     new TransactionLineRequest("2100", request.SupplierPartnerId, null, 0, transactionAmount, 0, transactionAmount, transactionCurrency, 1)
                 }, branch, request.PurchaseDate, request.SavedBy), ct);
             }
-            return (await GetAsync(ct)).First(x=>x.PurchaseId==id);
+            return (await GetAsync(branch, ct)).First(x=>x.PurchaseId==id);
         } catch { await tx.RollbackAsync(ct); throw; }
     }
     private async Task<int> GetPrimaryCurrencyIdAsync(CancellationToken ct){await using var db=await OpenAsync(ct);await using var cmd=db.CreateCommand();cmd.CommandText="SELECT TOP 1 CurrencyId FROM dbo.Currencies WHERE IsPrimary=1 AND IsActive=1";var value=await cmd.ExecuteScalarAsync(ct);return value is null||value==DBNull.Value?1:Convert.ToInt32(value);}

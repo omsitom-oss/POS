@@ -3,6 +3,7 @@ using ElitePos.LocalService.Data.Management;
 using ElitePos.LocalService.Data.Pos;
 using ElitePos.LocalService.Endpoints;
 using ElitePos.LocalService.Models;
+using ElitePos.LocalService.Security;
 using ElitePos.LocalService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -42,6 +43,27 @@ if (args.Contains("--migrate-pos", StringComparer.OrdinalIgnoreCase))
     }
 }
 
+var createAdminIndex = Array.FindIndex(args, arg => arg.Equals("--create-admin", StringComparison.OrdinalIgnoreCase));
+if (createAdminIndex >= 0)
+{
+    var posOptions = builder.Configuration.GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>() ?? new DatabaseOptions();
+    try
+    {
+        var userName = createAdminIndex + 1 < args.Length ? args[createAdminIndex + 1] : throw new InvalidOperationException("Usage: --create-admin <username>");
+        var temporaryPassword = await new AdminBootstrap(new DbConnectionFactory(posOptions, builder.Configuration, builder.Environment)).CreateAsync(userName);
+        Console.WriteLine($"Administrator '{userName}' created with the {AdminBootstrap.RoleName} role.");
+        Console.WriteLine($"One-time password: {temporaryPassword}");
+        Console.WriteLine("Sign in with it and choose a new password. It is not shown again.");
+        return;
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Creating the administrator failed: {exception.Message}");
+        Environment.ExitCode = 1;
+        return;
+    }
+}
+
 var databaseOptions = builder.Configuration
     .GetSection(DatabaseOptions.SectionName)
     .Get<DatabaseOptions>() ?? new DatabaseOptions();
@@ -74,6 +96,7 @@ builder.Services.AddSingleton<TransactionService>();
 builder.Services.AddSingleton<ReceiptService>();
 builder.Services.AddSingleton<ExpenseService>();
 builder.Services.AddSingleton<TreasuryTransferService>();
+builder.Services.AddPosSecurity(builder.Configuration);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DesignLab", policy => policy
@@ -83,6 +106,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 app.UseCors("DesignLab");
+app.UsePosSecurity();
 
 // SQLite is a fresh local destination in this foundation. SQL Server is connection-only
 // until a destination schema is explicitly selected for a future migration.
@@ -100,10 +124,10 @@ catch (Exception exception)
 }
 
 app.MapGet("/api/health", async (DatabaseHealthService health, CancellationToken cancellationToken) =>
-    Results.Ok(await health.CheckAsync(cancellationToken)));
+    Results.Ok(await health.CheckAsync(cancellationToken))).AllowAnonymous();
 
 app.MapGet("/api/database/provider", (DbConnectionFactory factory) =>
-    Results.Ok(new { provider = factory.ProviderName }));
+    Results.Ok(new { provider = factory.ProviderName })).RequireAuthorization();
 app.MapManagementEndpoints();
 app.MapSettingsEndpoints();
 app.MapLocationEndpoints();

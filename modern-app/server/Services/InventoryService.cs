@@ -71,6 +71,12 @@ public sealed class InventoryService(DbConnectionFactory factory, TransactionSer
         await using var costCommand=db.CreateCommand(); costCommand.CommandText="SELECT p.PurchaseId,pl.UnitPrice FROM dbo.PurchaseLines pl JOIN dbo.Purchases p ON p.PurchaseId=pl.PurchaseId WHERE pl.PurchaseLineId=@line";Add(costCommand,"@line",line,DbType.Int64);await using var costReader=await costCommand.ExecuteReaderAsync(ct);if(!await costReader.ReadAsync(ct))throw new InventoryException("The batch was not found.");var purchase=costReader.GetInt64(0);var cost=costReader.GetDecimal(1);await costReader.CloseAsync(); await PostDisposalAsync(requestId,branch,item,purchase,qty,cost,reviewerId,ct); return new(requestId,"INVENTORY_DISPOSAL",item,line,qty,reason,"APPROVED",requested,created,reviewerId,DateTime.UtcNow);
     }
 
+    public async Task<int?> GetRequestBranchIdAsync(long requestId, CancellationToken ct)
+    {
+        await using var db=factory.CreateConnection(); await db.OpenAsync(ct); await using var command=db.CreateCommand(); command.CommandText="SELECT BranchId FROM dbo.InventoryRequests WHERE RequestId=@id"; Add(command,"@id",requestId,DbType.Int64);
+        return await command.ExecuteScalarAsync(ct) is { } value and not DBNull ? Convert.ToInt32(value) : null;
+    }
+
     public async Task<IReadOnlyList<InventoryRequestDto>> GetRequestsAsync(int branchId, string? status, CancellationToken ct)
     {
         await using var db=factory.CreateConnection(); await db.OpenAsync(ct); await using var command=db.CreateCommand(); command.CommandText="SELECT RequestId,RequestType,ItemId,PurchaseLineId,Quantity,Reason,Status,RequestedBy,CreatedAt,ReviewedBy,ReviewedAt FROM dbo.InventoryRequests WHERE BranchId=@branch AND (@status IS NULL OR Status=@status) ORDER BY CreatedAt DESC,RequestId DESC"; Add(command,"@branch",branchId,DbType.Int32); Add(command,"@status",string.IsNullOrWhiteSpace(status)?null:status.Trim().ToUpperInvariant(),DbType.String); var rows=new List<InventoryRequestDto>(); await using var reader=await command.ExecuteReaderAsync(ct); while(await reader.ReadAsync(ct)) rows.Add(new(reader.GetInt64(0),reader.GetString(1),reader.GetInt64(2),reader.IsDBNull(3)?null:reader.GetInt64(3),reader.GetDecimal(4),reader.GetString(5),reader.GetString(6),reader.IsDBNull(7)?null:reader.GetInt32(7),reader.GetDateTime(8),reader.IsDBNull(9)?null:reader.GetInt32(9),reader.IsDBNull(10)?null:reader.GetDateTime(10))); return rows;

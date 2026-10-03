@@ -7,11 +7,11 @@ namespace ElitePos.LocalService.Services;
 
 public sealed class SalesService(DbConnectionFactory factory, TransactionService transactions)
 {
-    public async Task<IReadOnlyList<SaleListItem>> GetAsync(DateTime? from, DateTime? to, CancellationToken ct)
+    public async Task<IReadOnlyList<SaleListItem>> GetAsync(int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         await using var db = factory.CreateConnection(); await db.OpenAsync(ct); await using var command = db.CreateCommand();
-        command.CommandText = "SELECT s.SaleId,s.SaleNo,s.SaleDate,p.PartnerName,t.NameEn,c.Symbol,s.Total,COUNT(l.SaleLineId),s.Status FROM dbo.Sales s LEFT JOIN dbo.Partners p ON p.PartnerId=s.CustomerPartnerId JOIN dbo.Treasuries t ON t.TreasuryId=s.TreasuryId JOIN dbo.Currencies c ON c.CurrencyId=s.CurrencyId LEFT JOIN dbo.SaleLines l ON l.SaleId=s.SaleId WHERE (@from IS NULL OR s.SaleDate>=@from) AND (@to IS NULL OR s.SaleDate<=@to) GROUP BY s.SaleId,s.SaleNo,s.SaleDate,p.PartnerName,t.NameEn,c.Symbol,s.Total,s.Status ORDER BY s.SaleDate DESC,s.SaleId DESC";
-        Add(command,"@from",from?.Date,DbType.Date); Add(command,"@to",to?.Date,DbType.Date); var rows=new List<SaleListItem>(); await using var reader=await command.ExecuteReaderAsync(ct); while(await reader.ReadAsync(ct)) rows.Add(new(reader.GetInt64(0),reader.GetString(1),reader.GetDateTime(2),reader.IsDBNull(3)?null:reader.GetString(3),reader.GetString(4),reader.GetString(5),reader.GetDecimal(6),reader.GetInt32(7),reader.GetString(8))); return rows;
+        command.CommandText = "SELECT s.SaleId,s.SaleNo,s.SaleDate,p.PartnerName,t.NameEn,c.Symbol,s.Total,COUNT(l.SaleLineId),s.Status FROM dbo.Sales s LEFT JOIN dbo.Partners p ON p.PartnerId=s.CustomerPartnerId JOIN dbo.Treasuries t ON t.TreasuryId=s.TreasuryId JOIN dbo.Currencies c ON c.CurrencyId=s.CurrencyId LEFT JOIN dbo.SaleLines l ON l.SaleId=s.SaleId WHERE (@branch IS NULL OR s.BranchId=@branch) AND (@from IS NULL OR s.SaleDate>=@from) AND (@to IS NULL OR s.SaleDate<=@to) GROUP BY s.SaleId,s.SaleNo,s.SaleDate,p.PartnerName,t.NameEn,c.Symbol,s.Total,s.Status ORDER BY s.SaleDate DESC,s.SaleId DESC";
+        Add(command,"@branch",branchId,DbType.Int32); Add(command,"@from",from?.Date,DbType.Date); Add(command,"@to",to?.Date,DbType.Date); var rows=new List<SaleListItem>(); await using var reader=await command.ExecuteReaderAsync(ct); while(await reader.ReadAsync(ct)) rows.Add(new(reader.GetInt64(0),reader.GetString(1),reader.GetDateTime(2),reader.IsDBNull(3)?null:reader.GetString(3),reader.GetString(4),reader.GetString(5),reader.GetDecimal(6),reader.GetInt32(7),reader.GetString(8))); return rows;
     }
 
     public async Task<SaleResult> CreateAsync(SaleWriteRequest request, CancellationToken ct)

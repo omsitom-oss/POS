@@ -7,16 +7,16 @@ namespace ElitePos.LocalService.Services;
 
 public sealed class TransactionService(DbConnectionFactory factory)
 {
-    public Task<TransactionStatement> GetAccountStatementAsync(string accountId, DateTime? from, DateTime? to, CancellationToken ct)
+    public Task<TransactionStatement> GetAccountStatementAsync(string accountId, int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(accountId)) throw new TransactionException("Account ID is required.");
-        return GetStatementAsync("account", accountId.Trim(), from, to, ct);
+        return GetStatementAsync("account", accountId.Trim(), branchId, from, to, ct);
     }
 
-    public Task<TransactionStatement> GetTreasuryStatementAsync(int treasuryId, DateTime? from, DateTime? to, CancellationToken ct)
+    public Task<TransactionStatement> GetTreasuryStatementAsync(int treasuryId, int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         if (treasuryId <= 0) throw new TransactionException("Treasury ID is required.");
-        return GetStatementAsync("treasury", treasuryId.ToString(), from, to, ct);
+        return GetStatementAsync("treasury", treasuryId.ToString(), branchId, from, to, ct);
     }
 
     public async Task<PartnerBalance> GetPartnerBalanceAsync(int partnerId, int currencyId, CancellationToken ct)
@@ -108,7 +108,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
         var value = await command.ExecuteScalarAsync(ct); if (value is null) throw new TransactionException("An active branch is required before recording transactions."); return Convert.ToInt32(value);
     }
 
-    private async Task<TransactionStatement> GetStatementAsync(string kind, string value, DateTime? from, DateTime? to, CancellationToken ct)
+    private async Task<TransactionStatement> GetStatementAsync(string kind, string value, int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         if (from.HasValue && to.HasValue && from.Value.Date > to.Value.Date)
             throw new TransactionException("The start date cannot be after the end date.");
@@ -116,9 +116,10 @@ public sealed class TransactionService(DbConnectionFactory factory)
         await using var db = await OpenAsync(ct);
         await using var command = db.CreateCommand();
         command.CommandText = kind == "account"
-            ? "SELECT t.TransactionId,t.TransactionDate,t.MoveNo,t.TransactionType,t.Pattern,t.AccountId,t.PartnerId,t.TreasuryId,t.RefNo,t.Description,t.Debit,t.Credit,t.ForeignDebit,t.ForeignCredit,t.CurrencyId,c.CurrencyCode,c.Symbol,t.ExchangeRate,t.SavedBy,t.SavedOn FROM dbo.Transactions t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.AccountId=@value AND (@from IS NULL OR t.TransactionDate>=@from) AND (@to IS NULL OR t.TransactionDate<=@to) ORDER BY t.TransactionDate,t.TransactionId"
-            : "SELECT t.TransactionId,t.TransactionDate,t.MoveNo,t.TransactionType,t.Pattern,t.AccountId,t.PartnerId,t.TreasuryId,t.RefNo,t.Description,t.Debit,t.Credit,t.ForeignDebit,t.ForeignCredit,t.CurrencyId,c.CurrencyCode,c.Symbol,t.ExchangeRate,t.SavedBy,t.SavedOn FROM dbo.Transactions t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.TreasuryId=@value AND (@from IS NULL OR t.TransactionDate>=@from) AND (@to IS NULL OR t.TransactionDate<=@to) ORDER BY t.TransactionDate,t.TransactionId";
+            ? "SELECT t.TransactionId,t.TransactionDate,t.MoveNo,t.TransactionType,t.Pattern,t.AccountId,t.PartnerId,t.TreasuryId,t.RefNo,t.Description,t.Debit,t.Credit,t.ForeignDebit,t.ForeignCredit,t.CurrencyId,c.CurrencyCode,c.Symbol,t.ExchangeRate,t.SavedBy,t.SavedOn FROM dbo.Transactions t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.AccountId=@value AND (@branch IS NULL OR t.BranchId=@branch) AND (@from IS NULL OR t.TransactionDate>=@from) AND (@to IS NULL OR t.TransactionDate<=@to) ORDER BY t.TransactionDate,t.TransactionId"
+            : "SELECT t.TransactionId,t.TransactionDate,t.MoveNo,t.TransactionType,t.Pattern,t.AccountId,t.PartnerId,t.TreasuryId,t.RefNo,t.Description,t.Debit,t.Credit,t.ForeignDebit,t.ForeignCredit,t.CurrencyId,c.CurrencyCode,c.Symbol,t.ExchangeRate,t.SavedBy,t.SavedOn FROM dbo.Transactions t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.TreasuryId=@value AND (@branch IS NULL OR t.BranchId=@branch) AND (@from IS NULL OR t.TransactionDate>=@from) AND (@to IS NULL OR t.TransactionDate<=@to) ORDER BY t.TransactionDate,t.TransactionId";
         Add(command, "@value", kind == "account" ? value : int.Parse(value), kind == "account" ? DbType.String : DbType.Int32, kind == "account" ? 50 : null);
+        Add(command, "@branch", branchId, DbType.Int32);
         Add(command, "@from", from?.Date, DbType.Date);
         Add(command, "@to", to?.Date, DbType.Date);
 

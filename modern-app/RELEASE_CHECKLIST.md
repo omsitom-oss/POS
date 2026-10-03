@@ -48,3 +48,4 @@ Use this file as the live implementation and verification record. Mark each item
 - 2026-10-03: New-sale layout separates sale details into a right-side panel and keeps the item table in the main center area, with responsive stacking on narrow screens.
 - 2026-10-03: Sales API rejects non-primary currency treasuries; frontend and backend builds passed.
 - 2026-09-29: frontend build/lint and backend build passed; API smoke and reversible import/cost test passed.
+- 2026-10-03: API authentication added (server-side sessions, lockout, permission policy on every route, server-side branch scoping, no default password; migration 046). Verified end to end against SQL Server 2022; the two P0 boxes are ticked once the automated security tests land with the CI test project.
