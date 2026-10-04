@@ -32,10 +32,14 @@ public sealed class ExpenseService(DbConnectionFactory factory, TransactionServi
         return rows;
     }
 
+    // Cost of goods sold and exchange losses are posted by sales and payments; an expense typed by hand would double them.
+    public static readonly IReadOnlySet<string> AutomaticAccounts = new HashSet<string> { SalesService.CostOfGoodsSoldAccount, ReceiptService.FxLossAccount };
+
     private static void Validate(ExpenseWriteRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.ExpenseAccountId)) throw new ExpenseException("Choose an expense account.");
         if (request.ExpenseAccountId.Trim().Length > 50) throw new ExpenseException("Expense account is too long.");
+        if (AutomaticAccounts.Contains(request.ExpenseAccountId.Trim())) throw new ExpenseException("That account is posted automatically by sales and payments. Choose another expense account.");
         if (request.TreasuryId <= 0) throw new ExpenseException("Choose a treasury.");
         if (request.Amount <= 0) throw new ExpenseException("Amount must be greater than zero.");
         if (request.PayeeName?.Trim().Length > 150) throw new ExpenseException("The payee name is too long.");
