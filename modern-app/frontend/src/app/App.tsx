@@ -115,7 +115,7 @@ function App() {
     : section === 'purchase-returns'
     ? <PurchaseReturnsPage locale={locale} canApprove={session.permissions.includes('PURCHASE_RETURN_APPROVE')} />
     : section === 'sales'
-    ? <SalesPage locale={locale} branchId={session.branchId} userId={session.userId} />
+    ? <SalesPage locale={locale} branchId={session.branchId} userId={session.userId} canOverridePrice={session.permissions.includes('SALES_PRICE_OVERRIDE')} />
     : section === 'reports'
     ? <ReportsPage locale={locale} />
     : section === 'purchases'
