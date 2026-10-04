@@ -7,6 +7,7 @@ namespace ElitePos.LocalService.Services;
 
 // Sales returns against a posted sales invoice. Each return is its own document (SR-<branch>-<number>):
 // the items go back into the invoice branch's stock and the refund leaves a treasury, all in one transaction.
+// A customer invoice sold on account has no treasury, so its return is credited to the customer's account instead.
 public sealed class SalesReturnService(DbConnectionFactory factory, TransactionService transactions)
 {
     private const string ReturnedPerLine = "(SELECT COALESCE(SUM(rl.Quantity),0) FROM dbo.SalesReturnLines rl JOIN dbo.SalesReturns r ON r.SalesReturnId=rl.SalesReturnId WHERE rl.SaleLineId=l.SaleLineId AND r.Status=N'POSTED')";
@@ -59,7 +60,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
             FROM dbo.SalesReturns r
             JOIN dbo.Sales s ON s.SaleId=r.SaleId
             LEFT JOIN dbo.Partners p ON p.PartnerId=s.CustomerPartnerId
-            JOIN dbo.Treasuries t ON t.TreasuryId=r.TreasuryId
+            LEFT JOIN dbo.Treasuries t ON t.TreasuryId=r.TreasuryId
             JOIN dbo.Currencies c ON c.CurrencyId=r.CurrencyId
             WHERE (@branch IS NULL OR r.BranchId=@branch) AND (@from IS NULL OR r.ReturnDate>=@from) AND (@to IS NULL OR r.ReturnDate<=@to)
             ORDER BY r.ReturnDate DESC,r.SalesReturnId DESC
@@ -70,7 +71,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
         var rows = new List<SalesReturnListItem>();
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            rows.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetDateTime(2), reader.GetInt64(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(6), reader.GetString(7), reader.GetString(8), reader.GetDecimal(9), reader.GetInt32(10)));
+            rows.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetDateTime(2), reader.GetInt64(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7), reader.GetString(8), reader.GetDecimal(9), reader.GetInt32(10)));
         return rows;
     }
 
@@ -84,7 +85,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
         await using (var reader = await head.ExecuteReaderAsync(ct))
         {
             if (!await reader.ReadAsync(ct)) return null;
-            detail = new(reader.GetInt64(0), reader.GetString(1), reader.GetDateTime(2), reader.GetInt64(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt32(6), reader.GetString(7), reader.GetDecimal(8), reader.GetDecimal(9), reader.GetDecimal(10), reader.IsDBNull(11) ? null : reader.GetString(11), []);
+            detail = new(reader.GetInt64(0), reader.GetString(1), reader.GetDateTime(2), reader.GetInt64(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetInt32(6), reader.GetString(7), reader.GetDecimal(8), reader.GetDecimal(9), reader.GetDecimal(10), reader.IsDBNull(11) ? null : reader.GetString(11), []);
         }
         await using var lines = db.CreateCommand();
         lines.CommandText = "SELECT rl.SaleLineId,rl.ItemId,i.NameAr,i.NameEn,rl.Quantity,rl.UnitPrice,rl.LineTotal FROM dbo.SalesReturnLines rl JOIN dbo.Items i ON i.ItemId=rl.ItemId WHERE rl.SalesReturnId=@id ORDER BY rl.SalesReturnLineId";
@@ -127,9 +128,14 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
                 returning.Add((line, quantity, costs[lineId]));
             }
 
-            var treasuryId = request.TreasuryId ?? source.TreasuryId;
-            await using (var treasury = db.CreateCommand())
+            // A sale posted without a treasury went on the customer's account, so its return goes back there too.
+            var onAccount = source.TreasuryId is null;
+            if (onAccount && request.TreasuryId.HasValue)
+                throw new SalesReturnException("This invoice was sold on the customer's account, so its return is credited to the customer and cannot be paid from a treasury.");
+            var treasuryId = onAccount ? null : request.TreasuryId ?? source.TreasuryId;
+            if (!onAccount)
             {
+                await using var treasury = db.CreateCommand();
                 treasury.Transaction = tx;
                 treasury.CommandText = "SELECT 1 FROM dbo.Treasuries WHERE TreasuryId=@treasury AND BranchId=@branch AND CurrencyId=@currency AND IsActive=1";
                 Add(treasury, "@treasury", treasuryId, DbType.Int32);
@@ -185,12 +191,15 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
                 await lineInsert.ExecuteNonQueryAsync(ct);
             }
 
-            // The reverse of the sale journal: sales revenue is debited and the refund leaves the treasury.
+            // The reverse of the sale journal: sales revenue is debited and the refund leaves the treasury,
+            // or is credited to the customer's receivable when the invoice was sold on account.
             if (net > 0)
                 await transactions.PostAsync(db, tx, new TransactionWriteRequest("SALES_RETURN", "SALES_RETURN", returnNo, $"Return of {source.SaleNo}", source.CurrencyId, 1,
                 [
                     new("4100", null, null, net, 0, net, 0, source.CurrencyId, 1),
-                    new($"TREASURY:{treasuryId}", null, treasuryId, 0, net, 0, net, source.CurrencyId, 1),
+                    onAccount
+                        ? new($"PARTNER:{source.CustomerPartnerId}", source.CustomerPartnerId, null, 0, net, 0, net, source.CurrencyId, 1)
+                        : new($"TREASURY:{treasuryId}", null, treasuryId, 0, net, 0, net, source.CurrencyId, 1),
                 ], source.BranchId, returnDate, request.SavedBy), ct);
 
             await tx.CommitAsync(ct);
@@ -212,7 +221,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
     {
         await using var head = db.CreateCommand();
         head.Transaction = tx;
-        head.CommandText = "SELECT s.SaleId,s.SaleNo,s.SaleDate,s.BranchId,p.PartnerName,s.TreasuryId,s.CurrencyId,c.Symbol,s.Total,s.Discount,COALESCE((SELECT SUM(r.Total) FROM dbo.SalesReturns r WHERE r.SaleId=s.SaleId AND r.Status=N'POSTED'),0) FROM dbo.Sales s LEFT JOIN dbo.Partners p ON p.PartnerId=s.CustomerPartnerId JOIN dbo.Currencies c ON c.CurrencyId=s.CurrencyId WHERE s.SaleId=@id";
+        head.CommandText = "SELECT s.SaleId,s.SaleNo,s.SaleDate,s.BranchId,p.PartnerName,s.TreasuryId,s.CurrencyId,c.Symbol,s.Total,s.Discount,COALESCE((SELECT SUM(r.Total) FROM dbo.SalesReturns r WHERE r.SaleId=s.SaleId AND r.Status=N'POSTED'),0),s.CustomerPartnerId FROM dbo.Sales s LEFT JOIN dbo.Partners p ON p.PartnerId=s.CustomerPartnerId JOIN dbo.Currencies c ON c.CurrencyId=s.CurrencyId WHERE s.SaleId=@id";
         Add(head, "@id", saleId, DbType.Int64);
         SalesReturnSource source;
         await using (var reader = await head.ExecuteReaderAsync(ct))
@@ -220,7 +229,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
             if (!await reader.ReadAsync(ct)) return null;
             var total = reader.GetDecimal(8);
             var discount = reader.GetDecimal(9);
-            source = new(reader.GetInt64(0), reader.GetString(1), reader.GetDateTime(2), reader.GetInt32(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetInt32(5), reader.GetInt32(6), reader.GetString(7), total + discount, discount, total, reader.GetDecimal(10), []);
+            source = new(reader.GetInt64(0), reader.GetString(1), reader.GetDateTime(2), reader.GetInt32(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetInt32(5), reader.GetInt32(6), reader.GetString(7), total + discount, discount, total, reader.GetDecimal(10), [], reader.IsDBNull(11) ? null : reader.GetInt32(11));
         }
         await using var lines = db.CreateCommand();
         lines.Transaction = tx;

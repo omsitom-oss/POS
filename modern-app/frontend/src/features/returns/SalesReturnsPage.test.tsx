@@ -68,6 +68,22 @@ describe('SalesReturnsPage', () => {
     expect(screen.getByRole('option', { name: /Front till/ })).toBeInTheDocument()
   })
 
+  it('credits a customer invoice to the customer without a treasury', async () => {
+    const onAccount = { ...invoice, customerPartnerId: 9, customerName: 'Al Noor Clinic', treasuryId: null }
+    const fetchMock = mockFetch([...routes.map(route => route.path === '/api/sales-returns/invoices/41' ? { ...route, body: onAccount } : route), { method: 'POST', path: '/api/sales-returns', status: 201, body: { returnNo: 'SR-1-00009', total: 15.48 } }])
+    render(<SalesReturnsPage locale="en" />)
+    await openInvoice()
+    expect(screen.queryByRole('button', { name: 'Refund from treasury' })).not.toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent("credited to Al Noor Clinic's account")
+    await userEvent.type(screen.getByLabelText('Return quantity for Panadol'), '2')
+    await userEvent.click(screen.getByRole('button', { name: /Save return/ }))
+    expect(screen.getByRole('dialog')).toHaveTextContent("15.48 AED is credited to Al Noor Clinic's account")
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm return' }))
+    expect(await screen.findByText('Return saved: SR-1-00009')).toBeInTheDocument()
+    const [, init] = fetchMock.mock.calls.find(([url, request]) => url === '/api/sales-returns' && request?.method === 'POST')!
+    expect(JSON.parse(String(init?.body))).toMatchObject({ saleId: 41, treasuryId: null })
+  })
+
   it('renders right-to-left in Arabic', async () => {
     mockFetch(routes)
     const { container } = render(<SalesReturnsPage locale="ar" />)
