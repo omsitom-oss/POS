@@ -27,7 +27,7 @@ public sealed class AdminBootstrap(DbConnectionFactory factory)
 
             var roleId = await ScalarAsync(db, tx, "SELECT RoleId FROM dbo.Roles WHERE Name=@name", ct, ("@name", RoleName, DbType.String))
                 ?? await ScalarAsync(db, tx, "INSERT INTO dbo.Roles(Name,IsActive) OUTPUT INSERTED.RoleId VALUES(@name,1)", ct, ("@name", RoleName, DbType.String));
-            await ScalarAsync(db, tx, "UPDATE dbo.Roles SET IsActive=1 WHERE RoleId=@role; INSERT INTO dbo.RolePermissions(RoleId,PermissionId) SELECT @role,p.PermissionId FROM dbo.Permissions p WHERE NOT EXISTS (SELECT 1 FROM dbo.RolePermissions rp WHERE rp.RoleId=@role AND rp.PermissionId=p.PermissionId)", ct, ("@role", roleId!, DbType.Int32));
+            await ScalarAsync(db, tx, "UPDATE dbo.Roles SET IsActive=1,MaxDiscountPercent=100 WHERE RoleId=@role; INSERT INTO dbo.RolePermissions(RoleId,PermissionId) SELECT @role,p.PermissionId FROM dbo.Permissions p WHERE NOT EXISTS (SELECT 1 FROM dbo.RolePermissions rp WHERE rp.RoleId=@role AND rp.PermissionId=p.PermissionId)", ct, ("@role", roleId!, DbType.Int32));
 
             var userId = await ScalarAsync(db, tx, "INSERT INTO dbo.Users(UserName,BranchId,PasswordHash,MustChangePassword,IsActive) OUTPUT INSERTED.UserId VALUES(@name,@branch,@hash,1,1)", ct,
                 ("@name", userName, DbType.String), ("@branch", branch, DbType.Int32), ("@hash", PasswordHasher.Hash(temporaryPassword), DbType.String));

@@ -1304,3 +1304,5 @@ textarea.text-input { height: auto; padding-block: 10px; }
 .detail-lines li { display: flex; justify-content: space-between; gap: 12px; padding-block: 4px; border-bottom: 1px dashed var(--border); }
 .detail-lines li:last-child { border-bottom: 0; }
 .detail-lines small { color: var(--text-muted); }
+.report-card { display: grid; gap: 4px; padding: 18px 20px; }
+.report-card .report-metric { margin-top: 4px; }

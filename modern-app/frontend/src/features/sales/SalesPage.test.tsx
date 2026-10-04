@@ -38,6 +38,20 @@ describe('SalesPage', () => {
     expect(screen.getByText('Total', { selector: 'strong' }).nextSibling).toHaveTextContent('30.00 AED')
   })
 
+  it('keeps the list price unless the user may change prices', async () => {
+    mockFetch(references)
+    const { unmount } = render(<SalesPage locale="en" branchId={1} userId={7} />)
+    await openNewInvoice()
+    await scan('BRU-400')
+    expect(screen.getByLabelText('Item price 1')).toHaveAttribute('readonly')
+    unmount()
+    mockFetch(references)
+    render(<SalesPage locale="en" branchId={1} userId={7} canOverridePrice />)
+    await openNewInvoice()
+    await scan('BRU-400')
+    expect(screen.getByLabelText('Item price 1')).not.toHaveAttribute('readonly')
+  })
+
   it('refuses to save without a treasury', async () => {
     const fetchMock = mockFetch(references)
     render(<SalesPage locale="en" branchId={1} userId={7} />)

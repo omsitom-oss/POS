@@ -248,7 +248,7 @@ export function ItemsPage({ locale }: { locale: Locale }) {
         }
         actions={
           <Button variant="primary" onClick={() => open()}>
-            ＋ {ar ? "إضافة صنف" : "Add Item"}
+            <Icon name="plus" size={18} />{ar ? "إضافة صنف" : "Add Item"}
           </Button>
         }
       />
