@@ -44,7 +44,7 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
         try
         {
             await using var head = db.CreateCommand(); head.Transaction = tx; head.CommandText = "SELECT BranchId,SupplierPartnerId,InvoiceNo,CurrencyId,Total,Description,SavedBy,Status,PurchaseType,ExchangeRateToBase FROM dbo.Purchases WHERE PurchaseId=@id"; Add(head,"@id",id,DbType.Int64);
-            await using var reader = await head.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) return null; var branch=reader.GetInt32(0); var supplier=reader.GetInt32(1); var invoice=reader.GetString(2); var currency=reader.GetInt32(3); var total=reader.GetDecimal(4); var description=reader.IsDBNull(5)?null:reader.GetString(5); var savedBy=reader.IsDBNull(6)?(int?)null:reader.GetInt32(6); var status=reader.GetString(7); var purchaseType=reader.GetString(8); if (purchaseType != "IMPORT" && description?.StartsWith("IMPORT:", StringComparison.OrdinalIgnoreCase) == true) purchaseType = "IMPORT"; var exchangeRate=reader.GetDecimal(9); await reader.CloseAsync(); if (status != "DRAFT") throw new PurchaseException("Only draft invoices can be received."); if (exchangeRate <= 0) throw new PurchaseException("A positive exchange rate is required.");
+            await using var reader = await head.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) return null; var branch=reader.GetInt32(0); var supplier=reader.GetInt32(1); var invoice=reader.GetString(2); var currency=reader.GetInt32(3); var total=reader.GetDecimal(4); var description=reader.IsDBNull(5)?null:reader.GetString(5); var savedBy=reader.IsDBNull(6)?(int?)null:reader.GetInt32(6); var status=reader.GetString(7); var purchaseType=reader.GetString(8); if (purchaseType != "IMPORT" && description?.StartsWith("IMPORT:", StringComparison.OrdinalIgnoreCase) == true) purchaseType = "IMPORT"; var exchangeRate=reader.GetDecimal(9); await reader.CloseAsync(); if (purchaseType == "IMPORT") throw new PurchaseException("Import shipments are received from the import screen."); if (status != "DRAFT") throw new PurchaseException("Only draft invoices can be received."); if (exchangeRate <= 0) throw new PurchaseException("A positive exchange rate is required.");
             await using var costs=db.CreateCommand(); costs.Transaction=tx; costs.CommandText="SELECT COALESCE(SUM(BaseAmount),0) FROM dbo.PurchaseAdditionalCosts WHERE PurchaseId=@id"; Add(costs,"@id",id,DbType.Int64); var additionalBase=Convert.ToDecimal(await costs.ExecuteScalarAsync(ct));
             await using var lines=db.CreateCommand();lines.Transaction=tx;lines.CommandText="SELECT PurchaseLineId,ItemId,Quantity,UnitPrice FROM dbo.PurchaseLines WHERE PurchaseId=@id";Add(lines,"@id",id,DbType.Int64);await using var lineReader=await lines.ExecuteReaderAsync(ct);var draftRows=new List<(long line,long item,decimal qty,decimal sourcePrice)>();while(await lineReader.ReadAsync(ct))draftRows.Add((lineReader.GetInt64(0),lineReader.GetInt64(1),lineReader.GetDecimal(2),lineReader.GetDecimal(3)));await lineReader.CloseAsync();
             var goodsBase=draftRows.Sum(row=>row.qty*row.sourcePrice*exchangeRate); var landedBase=goodsBase+additionalBase;
@@ -78,41 +78,17 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
         await using var db=await OpenAsync(ct); await using var tx=await db.BeginTransactionAsync(IsolationLevel.Serializable,ct);
         try
         {
-            await using var cmd=db.CreateCommand(); cmd.Transaction=tx; cmd.CommandText="DELETE t FROM dbo.Transactions t JOIN dbo.Purchases p ON (t.RefNo=p.InvoiceNo OR t.RefNo LIKE p.InvoiceNo + N':%') WHERE p.PurchaseId=@id AND p.Status=N'DRAFT'; DELETE FROM dbo.Purchases WHERE PurchaseId=@id AND Status=N'DRAFT';"; Add(cmd,"@id",id,DbType.Int64); var changed=await cmd.ExecuteNonQueryAsync(ct); await tx.CommitAsync(ct); return changed>0;
+            await using var cmd=db.CreateCommand(); cmd.Transaction=tx; cmd.CommandText="DELETE t FROM dbo.Transactions t JOIN dbo.Purchases p ON (t.RefNo=p.InvoiceNo OR t.RefNo LIKE p.InvoiceNo + N':%') WHERE p.PurchaseId=@id AND p.Status=N'DRAFT' AND p.PurchaseType<>N'IMPORT' AND (p.Description IS NULL OR p.Description NOT LIKE N'IMPORT:%'); DELETE FROM dbo.Purchases WHERE PurchaseId=@id AND Status=N'DRAFT' AND PurchaseType<>N'IMPORT' AND (Description IS NULL OR Description NOT LIKE N'IMPORT:%');"; Add(cmd,"@id",id,DbType.Int64); var changed=await cmd.ExecuteNonQueryAsync(ct); await tx.CommitAsync(ct); return changed>0;
         }
         catch { await tx.RollbackAsync(ct); throw; }
-    }
-    public async Task<IReadOnlyList<PurchaseAdditionalCost>> GetCostsAsync(long purchaseId, CancellationToken ct)
-    {
-        await using var db=await OpenAsync(ct); await using var cmd=db.CreateCommand(); cmd.CommandText="SELECT k.PurchaseCostId,k.CostType,k.Amount,k.CurrencyId,c.CurrencyCode,c.Symbol,k.ExchangeRateToBase,k.BaseAmount,k.Description FROM dbo.PurchaseAdditionalCosts k JOIN dbo.Currencies c ON c.CurrencyId=k.CurrencyId WHERE k.PurchaseId=@id ORDER BY k.PurchaseCostId"; Add(cmd,"@id",purchaseId,DbType.Int64);
-        var rows=new List<PurchaseAdditionalCost>(); await using var reader=await cmd.ExecuteReaderAsync(ct); while(await reader.ReadAsync(ct)) rows.Add(new(reader.GetInt64(0),reader.GetString(1),reader.GetDecimal(2),reader.GetInt32(3),reader.GetString(4),reader.GetString(5),reader.GetDecimal(6),reader.GetDecimal(7),reader.IsDBNull(8)?null:reader.GetString(8))); return rows;
-    }
-    public async Task<PurchaseAdditionalCost> AddCostAsync(long purchaseId, PurchaseAdditionalCostWriteRequest request, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(request.CostType) || request.Amount <= 0 || request.ExchangeRateToBase <= 0 || request.CurrencyId <= 0) throw new PurchaseException("Cost type, currency, amount and exchange rate are required.");
-        await using var db=await OpenAsync(ct); await using var tx=await db.BeginTransactionAsync(IsolationLevel.Serializable,ct); long id;
-        try { await using var check=db.CreateCommand(); check.Transaction=tx; check.CommandText="SELECT PurchaseType,Status,InvoiceNo,BranchId,SupplierPartnerId,Description FROM dbo.Purchases WHERE PurchaseId=@id"; Add(check,"@id",purchaseId,DbType.Int64); await using var reader=await check.ExecuteReaderAsync(ct); if(!await reader.ReadAsync(ct)) throw new PurchaseException("Import invoice was not found.",404); var type=reader.GetString(0); var status=reader.GetString(1); var invoice=reader.GetString(2); var branch=reader.GetInt32(3); var supplier=reader.GetInt32(4); var description=reader.IsDBNull(5)?null:reader.GetString(5); if(type!="IMPORT" && description?.StartsWith("IMPORT:", StringComparison.OrdinalIgnoreCase)==true) type="IMPORT"; await reader.CloseAsync(); if(type!="IMPORT"||status!="DRAFT") throw new PurchaseException("Costs can only be added to an import draft.");
-            if(request.CurrencyId==await GetPrimaryCurrencyIdAsync(db,tx,ct)) request=request with{ExchangeRateToBase=1};
-            var baseAmount=decimal.Round(request.Amount*request.ExchangeRateToBase,4); await using var insert=db.CreateCommand(); insert.Transaction=tx; insert.CommandText="INSERT INTO dbo.PurchaseAdditionalCosts(PurchaseId,CostType,Amount,CurrencyId,ExchangeRateToBase,BaseAmount,Description) OUTPUT INSERTED.PurchaseCostId VALUES(@purchase,@type,@amount,@currency,@rate,@base,@description)"; Add(insert,"@purchase",purchaseId,DbType.Int64);Add(insert,"@type",request.CostType.Trim(),DbType.String);Add(insert,"@amount",request.Amount,DbType.Decimal);Add(insert,"@currency",request.CurrencyId,DbType.Int32);Add(insert,"@rate",request.ExchangeRateToBase,DbType.Decimal);Add(insert,"@base",baseAmount,DbType.Decimal);Add(insert,"@description",request.Description,DbType.String); id=Convert.ToInt64(await insert.ExecuteScalarAsync(ct));
-            if (baseAmount > 0) { var primary=await GetPrimaryCurrencyIdAsync(db,tx,ct); await transactions.PostAsync(db,tx,new TransactionWriteRequest("PURCHASE_COST","IMPORT_COST",invoice+":COST:"+id,request.Description,primary,1,[new("1300",null,null,baseAmount,0,baseAmount,0,primary,1),new("2100",supplier,null,0,baseAmount,0,baseAmount,primary,1)],branch,null,null),ct); }
-            await tx.CommitAsync(ct);
-        }
-        catch (TransactionException ex) { await tx.RollbackAsync(ct); throw new PurchaseException(ex.Message, ex.StatusCode); }
-        catch { await tx.RollbackAsync(ct); throw; }
-        return (await GetCostsAsync(purchaseId,ct)).First(x=>x.PurchaseCostId==id);
     }
     public async Task<PurchaseListItem> SaveAsync(PurchaseWriteRequest request, CancellationToken ct)
     {
         if (request.SupplierPartnerId <= 0 || request.Lines is null || request.Lines.Count == 0) throw new PurchaseException("Supplier, currency and at least one item are required.");
         var status = string.Equals(request.Status, "POSTED", StringComparison.OrdinalIgnoreCase) ? "POSTED" : "DRAFT";
-        // An import is saved as a draft so its freight and customs can be added, then received; saving it straight as
-        // posted would put stock at the foreign price with no landed costs. Its discount belongs in the line prices,
-        // because the payable and the landed cost are both built from the lines.
+        // Imports have their own ledger (goods in transit, cost payees) in ImportShipmentService.
         if (string.Equals(request.PurchaseType, "IMPORT", StringComparison.OrdinalIgnoreCase))
-        {
-            if (status == "POSTED") throw new PurchaseException("An import shipment is saved as a draft, then received after its costs are added.");
-            if (request.Discount != 0) throw new PurchaseException("Enter an import discount in the item prices.");
-        }
+            throw new PurchaseException("Import shipments are saved from the import screen.");
         var branch = request.BranchId; long id;
         await using var db = await OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
