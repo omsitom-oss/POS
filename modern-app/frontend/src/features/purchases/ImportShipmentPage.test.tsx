@@ -16,8 +16,8 @@ const shipment = (status: string, costs: unknown[] = []) => ({
   costs,
 })
 
-const freight = { costId: 4, costType: 'FREIGHT', amount: 200, currencyId: 2, currencyCode: 'SAR', currencySymbol: 'SR', exchangeRateToBase: 160, baseAmount: 32000, payeeType: 'PARTNER', payeePartnerId: 12, payeeTreasuryId: null, payeeAccountCode: null, payeeName: 'Red Sea Lines', description: null }
-const customs = { costId: 5, costType: 'CUSTOMS', amount: 300, currencyId: 1, currencyCode: 'SDG', currencySymbol: 'SDG', exchangeRateToBase: 1, baseAmount: 300, payeeType: 'TREASURY', payeePartnerId: null, payeeTreasuryId: 3, payeeAccountCode: null, payeeName: 'Main till', description: 'Receipt 55' }
+const freight = { costId: 4, costType: 'FREIGHT', amount: 200, currencyId: 2, currencyCode: 'SAR', currencySymbol: 'SR', exchangeRateToBase: 160, baseAmount: 32000, payeeType: 'PARTNER', payeePartnerId: 12, payeeTreasuryId: null, payeeAccountCode: null, payeeName: 'Red Sea Lines', description: null, paidTo: null }
+const customs = { costId: 5, costType: 'CUSTOMS', amount: 300, currencyId: 1, currencyCode: 'SDG', currencySymbol: 'SDG', exchangeRateToBase: 1, baseAmount: 300, payeeType: 'TREASURY', payeePartnerId: null, payeeTreasuryId: 3, payeeAccountCode: null, payeeName: 'Main till', description: 'Receipt 55', paidTo: 'Port broker' }
 
 function routes(detail: unknown) {
   return [
@@ -49,7 +49,7 @@ describe('ImportShipmentPage', () => {
 
     expect(await screen.findByRole('heading', { name: /PO-1-00007/ })).toBeInTheDocument()
     expect(screen.getByText(/Owed to/)).toHaveTextContent('Red Sea Lines')
-    expect(screen.getByText(/Paid from/)).toHaveTextContent('Main till')
+    expect(screen.getByText(/Paid from/)).toHaveTextContent('Main till to Port broker')
     const panadol = screen.getByText('Panadol').closest('tr')!
     expect(within(panadol).getByText('3,846.00')).toBeInTheDocument()
     expect(screen.getByText('No expiry')).toBeInTheDocument()

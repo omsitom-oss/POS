@@ -197,6 +197,7 @@ export function ImportShipmentPage({ locale, purchaseId, onBack }: { locale: Loc
         payeeTreasuryId: cost.payeeTreasuryId ? String(cost.payeeTreasuryId) : '',
         payeeAccountCode: cost.payeeAccountCode ?? '',
         description: cost.description ?? '',
+        paidTo: cost.paidTo ?? '',
       } : emptyCost(header.currencyId, currency?.isPrimary ? '1' : header.rate),
     })
   }
@@ -216,6 +217,7 @@ export function ImportShipmentPage({ locale, purchaseId, onBack }: { locale: Loc
         payeeTreasuryId: draft.payeeType === 'TREASURY' ? Number(draft.payeeTreasuryId) : null,
         payeeAccountCode: draft.payeeType === 'ACCOUNT' ? draft.payeeAccountCode : null,
         description: draft.description.trim() || null,
+        paidTo: draft.payeeType === 'TREASURY' ? draft.paidTo.trim() || null : null,
       }
       const url = costModal.costId ? `/api/imports/${shipment.purchaseId}/costs/${costModal.costId}` : `/api/imports/${shipment.purchaseId}/costs`
       const response = await fetch(url, { method: costModal.costId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -420,6 +422,7 @@ export function ImportShipmentPage({ locale, purchaseId, onBack }: { locale: Loc
                       <Icon name={cost.payeeType === 'TREASURY' ? 'wallet' : cost.payeeType === 'ACCOUNT' ? 'bank' : 'user'} size={14} />
                       {cost.payeeType === 'TREASURY' ? (ar ? 'دفع من ' : 'Paid from ') : cost.payeeType === 'ACCOUNT' ? (ar ? 'حساب ' : 'Account ') : (ar ? 'مستحق لـ ' : 'Owed to ')}
                       {cost.payeeType === 'ACCOUNT' ? `${cost.payeeAccountCode} · ${cost.payeeName}` : cost.payeeName}
+                      {cost.paidTo && (ar ? ` إلى ${cost.paidTo}` : ` to ${cost.paidTo}`)}
                     </span>
                     {cost.description && <small>{cost.description}</small>}
                   </div>
@@ -463,5 +466,5 @@ export function ImportShipmentPage({ locale, purchaseId, onBack }: { locale: Loc
 }
 
 function emptyCost(currencyId: string, rate: string): CostDraft {
-  return { costType: '', amount: '', currencyId, exchangeRate: rate, payeeType: 'PARTNER', payeePartnerId: '', payeeTreasuryId: '', payeeAccountCode: '', description: '' }
+  return { costType: '', amount: '', currencyId, exchangeRate: rate, payeeType: 'PARTNER', payeePartnerId: '', payeeTreasuryId: '', payeeAccountCode: '', description: '', paidTo: '' }
 }
