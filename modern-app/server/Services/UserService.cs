@@ -36,6 +36,7 @@ public sealed class UserService(DbConnectionFactory factory)
             }
             await using (var clearRoles = db.CreateCommand()) { clearRoles.Transaction = tx; clearRoles.CommandText = "DELETE FROM dbo.UserRoles WHERE UserId=@user"; Add(clearRoles, "@user", userId, DbType.Int32); await clearRoles.ExecuteNonQueryAsync(ct); }
             foreach (var roleId in (request.RoleIds ?? []).Distinct()) { await using var role = db.CreateCommand(); role.Transaction = tx; role.CommandText = "INSERT INTO dbo.UserRoles(UserId,RoleId) SELECT @user,@role WHERE EXISTS (SELECT 1 FROM dbo.Roles WHERE RoleId=@role AND IsActive=1)"; Add(role, "@user", userId, DbType.Int32); Add(role, "@role", roleId, DbType.Int32); await role.ExecuteNonQueryAsync(ct); }
+            if (id.HasValue && !await UserManagerGuard.AnyRemainsAsync(db, tx, ct)) throw new UserException(UserManagerGuard.Message, 409);
             await tx.CommitAsync(ct); return (await GetAsync(true, ct)).First(item => item.UserId == userId) with { TemporaryPassword = temporaryPassword };
         }
         catch (Exception ex) when (ex.ToString().Contains("2601", StringComparison.Ordinal) || ex.ToString().Contains("2627", StringComparison.Ordinal)) { await tx.RollbackAsync(ct); throw new UserException("That username is already in use.", 409); }
@@ -47,6 +48,7 @@ public sealed class UserService(DbConnectionFactory factory)
         await using var db = await OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(ct);
         await using var cmd = db.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "UPDATE dbo.Users SET IsActive=@active,UpdatedAt=SYSUTCDATETIME() WHERE UserId=@id"; Add(cmd, "@active", active, DbType.Boolean); Add(cmd, "@id", id, DbType.Int32);
         var changed = await cmd.ExecuteNonQueryAsync(ct) > 0; if (changed && !active) await AuthService.RevokeUserSessionsAsync(db, tx, id, null, ct);
+        if (changed && !active && !await UserManagerGuard.AnyRemainsAsync(db, tx, ct)) { await tx.RollbackAsync(ct); throw new UserException(UserManagerGuard.Message, 409); }
         await tx.CommitAsync(ct); return changed;
     }
     // Replaces the user's password with a random one-time password, returned once to the administrator. Null when the user does not exist.
