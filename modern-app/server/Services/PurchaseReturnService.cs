@@ -288,7 +288,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
         await using (var stock = db.CreateCommand())
         {
             stock.Transaction = tx;
-            stock.CommandText = "INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseReturnId,PurchaseLineId,Quantity,UnitCost,PostingStatus) SELECT @branch,ItemId,PurchaseReturnId,PurchaseLineId,-Quantity,UnitCost,N'POSTED' FROM dbo.PurchaseReturnLines WHERE PurchaseReturnId=@id";
+            stock.CommandText = $"INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseReturnId,PurchaseLineId,Quantity,UnitCost,PostingStatus) SELECT @branch,rl.ItemId,rl.PurchaseReturnId,rl.PurchaseLineId,-rl.Quantity,COALESCE({StockBatches.CostSql("rl.PurchaseLineId")},rl.UnitCost),N'POSTED' FROM dbo.PurchaseReturnLines rl WHERE rl.PurchaseReturnId=@id";
             Add(stock, "@branch", source.BranchId, DbType.Int32);
             Add(stock, "@id", returnId, DbType.Int64);
             await stock.ExecuteNonQueryAsync(ct);
