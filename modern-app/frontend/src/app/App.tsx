@@ -145,7 +145,7 @@ function App() {
     : section === 'sales'
     ? <SalesPage locale={locale} branchId={session.branchId} userId={session.userId} canOverridePrice={session.permissions.includes('SALES_PRICE_OVERRIDE')} />
     : section === 'reports'
-    ? <ReportsPage locale={locale} />
+    ? <ReportsPage locale={locale} canAllBranches={session.permissions.includes('ALL_BRANCHES')} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} />
     : section === 'purchases'
     ? <PurchasesPage locale={locale} onImport={(purchaseId) => { setPurchaseImportId(purchaseId); navigate('purchase-import') }} />
     : section === 'purchase-import'
