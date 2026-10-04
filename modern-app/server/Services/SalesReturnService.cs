@@ -176,8 +176,12 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
             Add(insert, "@saved", request.SavedBy, DbType.Int32);
             returnId = Convert.ToInt64(await insert.ExecuteScalarAsync(ct));
 
-            foreach (var (line, quantity, unitCost) in returning)
+            decimal returnedCost = 0;
+            foreach (var (line, quantity, saleCost) in returning)
             {
+                // The items go back into the batches the sale line took them from, at the cost they left them at.
+                var chunks = await StockBatches.ReturnAsync(db, tx, line.SaleLineId, quantity, saleCost, ct);
+                var unitCost = StockBatches.UnitCostOf(chunks);
                 await using var lineInsert = db.CreateCommand();
                 lineInsert.Transaction = tx;
                 lineInsert.CommandText = "INSERT INTO dbo.SalesReturnLines(SalesReturnId,SaleLineId,ItemId,Quantity,UnitPrice,UnitCost) VALUES(@return,@line,@item,@qty,@price,@cost)";
@@ -189,8 +193,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
                 Add(lineInsert, "@cost", unitCost, DbType.Decimal);
                 await lineInsert.ExecuteNonQueryAsync(ct);
 
-                // The items go back into the batches the sale line took them from.
-                foreach (var (batch, back) in await StockBatches.ReturnAsync(db, tx, line.SaleLineId, quantity, ct))
+                foreach (var chunk in chunks)
                 {
                     await using var move = db.CreateCommand();
                     move.Transaction = tx;
@@ -199,10 +202,11 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
                     Add(move, "@item", line.ItemId, DbType.Int64);
                     Add(move, "@return", returnId, DbType.Int64);
                     Add(move, "@line", line.SaleLineId, DbType.Int64);
-                    Add(move, "@batch", batch, DbType.Int64);
-                    Add(move, "@qty", back, DbType.Decimal);
-                    Add(move, "@cost", unitCost, DbType.Decimal);
+                    Add(move, "@batch", chunk.PurchaseLineId, DbType.Int64);
+                    Add(move, "@qty", chunk.Quantity, DbType.Decimal);
+                    Add(move, "@cost", chunk.UnitCost, DbType.Decimal);
                     await move.ExecuteNonQueryAsync(ct);
+                    returnedCost += chunk.Quantity * chunk.UnitCost;
                 }
             }
 
@@ -217,7 +221,8 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
                     ? new($"PARTNER:{source.CustomerPartnerId}", source.CustomerPartnerId, null, 0, net, 0, net, source.CurrencyId, 1)
                     : new($"TREASURY:{treasuryId}", null, treasuryId, 0, net, 0, net, source.CurrencyId, 1));
             }
-            var cost = Math.Round(returning.Sum(item => item.Quantity * item.UnitCost), 4, MidpointRounding.AwayFromZero);
+            // At the cost of the batches the goods go back into, so 1300 Inventory keeps matching the stock's value.
+            var cost = Math.Round(returnedCost, 4, MidpointRounding.AwayFromZero);
             if (cost > 0)
             {
                 journal.Add(new(SalesService.InventoryAccount, null, null, cost, 0, cost, 0, source.CurrencyId, 1));
