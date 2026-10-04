@@ -6,7 +6,7 @@ using ElitePos.LocalService.Models;
 namespace ElitePos.LocalService.Services;
 
 // Sales returns against a posted sales invoice. Each return is its own document (SR-<branch>-<number>):
-// the items go back into the invoice branch's stock and the refund leaves a treasury, all in one transaction.
+// the items go back into the batches they were sold from and the refund leaves a treasury, all in one transaction.
 // A customer invoice sold on account has no treasury, so its return is credited to the customer's account instead.
 public sealed class SalesReturnService(DbConnectionFactory factory, TransactionService transactions)
 {
@@ -180,15 +180,30 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
             {
                 await using var lineInsert = db.CreateCommand();
                 lineInsert.Transaction = tx;
-                lineInsert.CommandText = "INSERT INTO dbo.SalesReturnLines(SalesReturnId,SaleLineId,ItemId,Quantity,UnitPrice,UnitCost) VALUES(@return,@line,@item,@qty,@price,@cost); INSERT INTO dbo.StockMovements(BranchId,ItemId,SalesReturnId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@return,@qty,@cost,N'POSTED')";
+                lineInsert.CommandText = "INSERT INTO dbo.SalesReturnLines(SalesReturnId,SaleLineId,ItemId,Quantity,UnitPrice,UnitCost) VALUES(@return,@line,@item,@qty,@price,@cost)";
                 Add(lineInsert, "@return", returnId, DbType.Int64);
                 Add(lineInsert, "@line", line.SaleLineId, DbType.Int64);
                 Add(lineInsert, "@item", line.ItemId, DbType.Int64);
                 Add(lineInsert, "@qty", quantity, DbType.Decimal);
                 Add(lineInsert, "@price", line.UnitPrice, DbType.Decimal);
                 Add(lineInsert, "@cost", unitCost, DbType.Decimal);
-                Add(lineInsert, "@branch", source.BranchId, DbType.Int32);
                 await lineInsert.ExecuteNonQueryAsync(ct);
+
+                // The items go back into the batches the sale line took them from.
+                foreach (var (batch, back) in await StockBatches.ReturnAsync(db, tx, line.SaleLineId, quantity, ct))
+                {
+                    await using var move = db.CreateCommand();
+                    move.Transaction = tx;
+                    move.CommandText = "INSERT INTO dbo.StockMovements(BranchId,ItemId,SalesReturnId,SaleLineId,PurchaseLineId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@return,@line,@batch,@qty,@cost,N'POSTED')";
+                    Add(move, "@branch", source.BranchId, DbType.Int32);
+                    Add(move, "@item", line.ItemId, DbType.Int64);
+                    Add(move, "@return", returnId, DbType.Int64);
+                    Add(move, "@line", line.SaleLineId, DbType.Int64);
+                    Add(move, "@batch", batch, DbType.Int64);
+                    Add(move, "@qty", back, DbType.Decimal);
+                    Add(move, "@cost", unitCost, DbType.Decimal);
+                    await move.ExecuteNonQueryAsync(ct);
+                }
             }
 
             // The reverse of the sale journal: sales revenue is debited and the refund leaves the treasury,
