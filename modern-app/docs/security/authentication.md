@@ -47,7 +47,7 @@ Each permission code is an authorization policy (`server/Security/PermissionCode
 | `INVENTORY_VIEW`, `INVENTORY_DISPOSE`, `INVENTORY_APPROVE` | Stock and batches, disposal requests, approving them |
 | `TREASURY_VIEW`, `TREASURY_MANAGE` | Receipts, expenses, statements, balances and chart of accounts; recording receipts, payments, expenses and transfers |
 | `JOURNAL_POST` | Manual journal entries (`POST /api/transactions`, also needs `TREASURY_VIEW`). They are always stored with type `MANUAL`. Migration 049 gives it to roles that hold `USER_MANAGEMENT`. |
-| `CHEQUES_MANAGE` | Depositing, clearing, bouncing, returning and cancelling cheques (`POST /api/cheques/{id}/actions`). Recording a cheque receipt or payment stays under `TREASURY_MANAGE`, and the cheque list under `TREASURY_VIEW`. Migration 050 gives it to roles that hold `USER_MANAGEMENT`. |
+| `CHEQUES_MANAGE` | Depositing, clearing, bouncing, returning and cancelling cheques (`POST /api/cheques/{id}/actions`). Recording a cheque receipt or payment stays under `TREASURY_MANAGE`, and the cheque list under `TREASURY_VIEW`. Migration 051 gives it to roles that hold `USER_MANAGEMENT`. |
 | `REPORTS_VIEW` | Report summary |
 | `ALL_BRANCHES` | Operational data of other branches |
 | `MANAGEMENT_ACCESS` | The central POSManagement customer registry |
