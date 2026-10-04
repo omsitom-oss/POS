@@ -84,7 +84,7 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
         { "GET", "/api/purchase-returns" }, { "GET", "/api/purchase-returns/invoices/1" }, { "POST", "/api/purchase-returns" }, { "POST", "/api/purchase-returns/1/approve" }, { "POST", "/api/purchase-returns/1/reject" },
         { "GET", "/api/purchases" }, { "GET", "/api/purchases/1" }, { "POST", "/api/purchases" }, { "DELETE", "/api/purchases/1" },
         { "GET", "/api/inventory" }, { "POST", "/api/inventory/disposals" }, { "POST", "/api/inventory/requests/1/approve" },
-        { "GET", "/api/receipts" }, { "POST", "/api/receipts" }, { "GET", "/api/expenses" }, { "POST", "/api/expenses" },
+        { "GET", "/api/receipts" }, { "POST", "/api/receipts" }, { "GET", "/api/cheques" }, { "GET", "/api/cheques/1" }, { "POST", "/api/cheques/1/actions" }, { "GET", "/api/expenses" }, { "POST", "/api/expenses" },
         { "GET", "/api/transactions/treasury/1" }, { "POST", "/api/transactions" }, { "POST", "/api/treasury-transfers" },
         { "GET", "/api/accounts/chart" }, { "GET", "/api/reports/summary" },
         { "GET", "/api/management/customers" }, { "POST", "/api/management/customers" },
@@ -126,6 +126,7 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
     [InlineData("GET", "/api/purchase-returns/invoices?branchId=2")]
     [InlineData("GET", "/api/purchases?branchId=2")]
     [InlineData("GET", "/api/receipts?branchId=2")]
+    [InlineData("GET", "/api/cheques?branchId=2")]
     [InlineData("GET", "/api/expenses?branchId=2")]
     [InlineData("GET", "/api/inventory?branchId=2")]
     [InlineData("GET", "/api/reports/summary?branchId=2")]
