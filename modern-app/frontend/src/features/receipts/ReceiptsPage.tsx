@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Button, DateInput, EmptyState, ErrorState, FormField, LoadingState, Modal, SearchInput, TableFooter, TextInput } from '../../components/shared'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Button, DateInput, DetailList, DetailPanel, ErrorState, FilterChips, FormField, Modal, Money, TextInput } from '../../components/shared'
+import { DataTable, type TableColumn } from '../../components/DataTable'
+import { datePresetOptions, inDatePreset, sumBy, type DatePreset } from '../../components/listFilters'
 import { useLoadEffect } from '../../components/useLoadEffect'
-import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
-import { localDate } from '../../app/formatters'
+import { formatDay, formatMoney, localDate } from '../../app/formatters'
 
 type Receipt = { moveNo: number; receiptNo: string; type: 'RECEIPT' | 'PAYMENT'; receiptDate: string; partnerId: number; partnerName: string | null; treasuryId: number; treasuryName: string | null; currencyId: number; currencyCode: string; currencySymbol: string; amount: number; partnerAmount: number; partnerCurrencyCode: string; partnerCurrencySymbol: string; exchangeRate: number; reason: string | null; description: string | null }
 type Partner = { partnerId: number; partnerCode: string; partnerName: string; status: string }
@@ -14,7 +15,7 @@ type PartnerBalance = { amount: number; debit: number; credit: number; currencyI
 type CompanyProfile = { companyName: string; companyAddress: string; companyPhone1: string; companyPhone2: string; companyMobileNo: string; companyFax: string; companyEmail: string; companyWebsite: string; logoBase64: string | null; logoContentType: string | null }
 
 const today = () => localDate()
-const formatAmount = (value: number | string) => (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const formatAmount = (value: number | string) => formatMoney(Number(value) || 0)
 const escapeHtml = (value: string | null | undefined) => (value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character)
 const smallNumberWordsEn = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
 const tensNumberWordsEn = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']
@@ -63,7 +64,6 @@ export function ReceiptsPage({ locale, variant = 'receipts' }: { locale: Locale;
   const [treasuries, setTreasuries] = useState<Treasury[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [loadedBalance, setLoadedBalance] = useState<{ key: string; value: PartnerBalance | null } | null>(null)
-  const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'RECEIPT' | 'PAYMENT'>(expensesView ? 'PAYMENT' : 'ALL')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -163,17 +163,70 @@ export function ReceiptsPage({ locale, variant = 'receipts' }: { locale: Locale;
       printWindow.document.body.innerHTML = '<p style="font:16px Arial;padding:24px">' + (ar ? 'تعذر تجهيز الإيصال للطباعة.' : 'Could not prepare the receipt for printing.') + '</p>'
     }
   }
-  const visible = useMemo(() => {
-    const q = search.trim().toLocaleLowerCase()
-    return rows.filter(item => !q || [item.receiptNo, item.partnerName ?? '', item.treasuryName ?? '', item.currencySymbol, item.description ?? ''].some(value => value.toLocaleLowerCase().includes(q)))
-  }, [rows, search])
-
-  const visiblePage = usePagination(visible)
+  const [period, setPeriod] = useState<DatePreset>('all')
+  const [selected, setSelected] = useState<Receipt | null>(null)
+  const visible = rows.filter(item => inDatePreset(item.receiptDate, period))
+  const typeLabel = (item: Receipt) => item.type === 'RECEIPT' ? (ar ? 'استلام' : 'Receipt') : (expensesView ? (ar ? 'منصرف' : 'Expense') : (ar ? 'دفع' : 'Payment'))
+  const typeBadge = (item: Receipt) => <span className={`receipt-type-badge ${item.type === 'RECEIPT' ? 'receipt-type-in' : 'receipt-type-out'}`}>{typeLabel(item)}</span>
+  const columns: Array<TableColumn<Receipt>> = [
+    { key: 'receiptNo', title: expensesView ? (ar ? 'رقم المنصرف' : 'Expense no.') : (ar ? 'رقم الإيصال' : 'Receipt no.'), value: item => item.receiptNo, render: item => <span className="doc-no">{item.receiptNo}</span> },
+    { key: 'type', title: ar ? 'النوع' : 'Type', value: item => item.type, searchable: false, render: typeBadge },
+    { key: 'receiptDate', title: ar ? 'التاريخ' : 'Date', value: item => item.receiptDate, searchable: false, render: item => formatDay(item.receiptDate) },
+    { key: 'partnerName', title: ar ? 'المستفيد' : 'Partner', value: item => item.partnerName ?? '', wrap: true, render: item => item.partnerName ?? '—' },
+    { key: 'description', title: ar ? 'البيان' : 'Description', value: item => item.description ?? item.reason ?? '', wrap: true, render: item => item.description ?? item.reason ?? <span className="muted-cell">—</span> },
+    { key: 'amount', title: ar ? 'المبلغ' : 'Amount', value: item => item.amount, align: 'end', searchable: false, render: item => <Money value={item.amount} symbol={item.currencySymbol} /> },
+  ]
+  const isSameCurrency = (item: Receipt) => item.currencyCode === item.partnerCurrencyCode
+  const symbolOf = (list: Receipt[]) => list[0]?.currencySymbol ?? ''
+  const panel = selected && <DetailPanel
+    title={<span className="doc-no">{selected.receiptNo}</span>}
+    badge={typeBadge(selected)}
+    closeLabel={ar ? 'إغلاق' : 'Close'}
+    onClose={() => setSelected(null)}
+    actions={<Button variant="secondary" onClick={() => void printReceipt(selected)}><Icon name="document" size={17} />{ar ? 'طباعة' : 'Print'}</Button>}>
+    <DetailList items={[
+      { label: ar ? 'التاريخ' : 'Date', value: formatDay(selected.receiptDate) },
+      { label: ar ? 'المستفيد' : 'Partner', value: selected.partnerName ?? '—' },
+      { label: ar ? 'الخزينة' : 'Treasury', value: selected.treasuryName ?? '—' },
+      { label: ar ? 'المبلغ' : 'Amount', value: <Money value={selected.amount} symbol={selected.currencySymbol} />, strong: true },
+      !isSameCurrency(selected) && { label: ar ? 'مبلغ الشريك' : 'Partner amount', value: <Money value={selected.partnerAmount} symbol={selected.partnerCurrencySymbol} /> },
+      !isSameCurrency(selected) && { label: ar ? 'سعر الصرف' : 'Rate', value: <span className="money">1 {selected.partnerCurrencySymbol} = {formatAmount(selected.exchangeRate)} {selected.currencySymbol}</span> },
+      selected.reason ? { label: ar ? 'السبب' : 'Reason', value: selected.reason } : null,
+      selected.description ? { label: ar ? 'البيان' : 'Description', value: selected.description } : null,
+    ]} />
+  </DetailPanel>
   return <div className="receipts-page" dir={ar ? 'rtl' : 'ltr'}>
-    <PageHeader eyebrow={ar ? 'المعاملات المالية' : 'FINANCE'} title={expensesView ? (ar ? 'المنصرفات' : 'Expenses') : (ar ? 'إيصالات الاستلام والدفع' : 'Receipts & payments')} description={expensesView ? (ar ? 'تسجيل ومراجعة المبالغ المصروفة من الخزائن.' : 'Record and review amounts paid from treasuries.') : (ar ? 'تسجيل ومراجعة الحركات المالية المرتبطة بالشركاء والخزائن.' : 'Record and review partner and treasury movements.')} actions={<div className="receipt-header-actions">{!expensesView && <Button variant="secondary" onClick={() => open('PAYMENT')}>＋ {ar ? 'إيصال دفع' : 'Payment receipt'}</Button>}{!expensesView && <Button variant="primary" onClick={() => open('RECEIPT')}>＋ {ar ? 'إيصال استلام' : 'Receipt'}</Button>}{expensesView && <Button variant="primary" onClick={() => open('PAYMENT')}>＋ {ar ? 'إضافة منصرف' : 'Add expense'}</Button>}</div>} />
-    <section className="receipts-toolbar"><SearchInput aria-label={expensesView ? (ar ? 'بحث في المنصرفات' : 'Search expenses') : (ar ? 'بحث في الإيصالات' : 'Search receipts')} placeholder={expensesView ? (ar ? 'ابحث برقم المنصرف أو المستفيد' : 'Search expense or partner') : (ar ? 'ابحث برقم الإيصال أو الشريك' : 'Search receipt or partner')} value={search} onChange={e => setSearch(e.target.value)} />{!expensesView && <div className="receipt-filters" role="tablist" aria-label={ar ? 'نوع الإيصال' : 'Receipt type'}><button className={typeFilter === 'ALL' ? 'is-active' : ''} onClick={() => setTypeFilter('ALL')} role="tab" aria-selected={typeFilter === 'ALL'}>{ar ? 'الكل' : 'All'}</button><button className={typeFilter === 'RECEIPT' ? 'is-active' : ''} onClick={() => setTypeFilter('RECEIPT')} role="tab" aria-selected={typeFilter === 'RECEIPT'}>{ar ? 'استلام' : 'Receipts'}</button><button className={typeFilter === 'PAYMENT' ? 'is-active' : ''} onClick={() => setTypeFilter('PAYMENT')} role="tab" aria-selected={typeFilter === 'PAYMENT'}>{ar ? 'دفع' : 'Payments'}</button></div>}</section>
+    <PageHeader title={expensesView ? (ar ? 'المنصرفات' : 'Expenses') : (ar ? 'إيصالات الاستلام والدفع' : 'Receipts & payments')} description={expensesView ? (ar ? 'تسجيل ومراجعة المبالغ المصروفة من الخزائن.' : 'Record and review amounts paid from treasuries.') : (ar ? 'المبالغ المستلمة من الشركاء والمدفوعة لهم.' : 'Money received from and paid to partners.')} actions={<div className="receipt-header-actions">{!expensesView && <Button variant="secondary" onClick={() => open('PAYMENT')}><Icon name="plus" size={18} />{ar ? 'دفع لشريك' : 'Pay a partner'}</Button>}{!expensesView && <Button variant="primary" onClick={() => open('RECEIPT')}><Icon name="plus" size={18} />{ar ? 'استلام من شريك' : 'Receive from a partner'}</Button>}{expensesView && <Button variant="primary" onClick={() => open('PAYMENT')}><Icon name="plus" size={18} />{ar ? 'إضافة منصرف' : 'Add expense'}</Button>}</div>} />
     {error && !modal && <ErrorState title={ar ? 'تعذر تنفيذ العملية' : 'Request failed'} detail={error} />}
-    {loading ? <LoadingState label={expensesView ? (ar ? 'جارٍ تحميل المنصرفات…' : 'Loading expenses…') : (ar ? 'جارٍ تحميل الإيصالات…' : 'Loading receipts…')} /> : visible.length === 0 ? <EmptyState title={expensesView ? (ar ? 'لا توجد منصرفات' : 'No expenses yet') : (ar ? 'لا توجد إيصالات' : 'No receipts yet')} detail={expensesView ? (ar ? 'أضف أول منصرف للبدء.' : 'Add an expense to begin.') : (ar ? 'أضف إيصال استلام أو دفع للبدء.' : 'Add a receipt or payment to begin.')} /> : <div className="receipts-table-wrap"><table className="receipts-table"><thead><tr><th>{expensesView ? (ar ? 'رقم المنصرف' : 'Expense no.') : (ar ? 'رقم الإيصال' : 'Receipt no.')}</th><th>{ar ? 'النوع' : 'Type'}</th><th>{ar ? 'التاريخ' : 'Date'}</th><th>{ar ? 'المستفيد' : 'Partner'}</th><th>{ar ? 'الخزينة' : 'Treasury'}</th><th>{ar ? 'المبلغ' : 'Amount'}</th><th>{ar ? 'مبلغ الشريك' : 'Partner amount'}</th><th>{ar ? 'سعر الصرف' : 'Rate'}</th><th>{ar ? 'البيان' : 'Description'}</th><th>{ar ? 'طباعة' : 'Print'}</th></tr></thead><tbody>{visiblePage.rows.map(item => <tr key={item.moveNo}><td><code>{item.receiptNo}</code></td><td><span className={`receipt-type-badge ${item.type === 'RECEIPT' ? 'receipt-type-in' : 'receipt-type-out'}`}>{item.type === 'RECEIPT' ? (ar ? 'استلام' : 'Receipt') : (expensesView ? (ar ? 'منصرف' : 'Expense') : (ar ? 'دفع' : 'Payment'))}</span></td><td>{item.receiptDate.slice(0, 10)}</td><td>{item.partnerName ?? '—'}</td><td>{item.treasuryName ?? '—'}</td><td className="numeric-cell">{formatAmount(item.amount)} <small>{item.currencySymbol}</small></td><td className="numeric-cell">{formatAmount(item.partnerAmount)} <small>{item.partnerCurrencySymbol}</small></td><td className="numeric-cell">1 {item.partnerCurrencySymbol} = {formatAmount(item.exchangeRate)} {item.currencySymbol}</td><td>{item.description ?? item.reason ?? '—'}</td><td><Button variant="icon" aria-label={ar ? 'طباعة' : 'Print'} title={ar ? 'طباعة' : 'Print'} onClick={() => void printReceipt(item)}>⎙</Button></td></tr>)}</tbody></table><TableFooter total={visible.length} locale={locale} pager={visiblePage.pager} /></div>}
+    <DataTable
+      locale={locale}
+      columns={columns}
+      rows={visible}
+      rowKey={item => item.moveNo}
+      loading={loading}
+      density="compact"
+      pageSize={15}
+      searchLabel={expensesView ? (ar ? 'بحث في المنصرفات' : 'Search expenses') : (ar ? 'بحث في الإيصالات' : 'Search receipts')}
+      searchPlaceholder={expensesView ? (ar ? 'ابحث برقم المنصرف أو المستفيد' : 'Search expense or partner') : (ar ? 'ابحث برقم الإيصال أو الشريك' : 'Search receipt or partner')}
+      filters={<>
+        {!expensesView && <FilterChips label={ar ? 'نوع الإيصال' : 'Receipt type'} value={typeFilter} onChange={value => { setTypeFilter(value); setSelected(null) }} options={[{ value: 'ALL', label: ar ? 'الكل' : 'All' }, { value: 'RECEIPT', label: ar ? 'استلام' : 'Receipts' }, { value: 'PAYMENT', label: ar ? 'دفع' : 'Payments' }]} />}
+        <FilterChips label={ar ? 'الفترة' : 'Period'} options={datePresetOptions(ar)} value={period} onChange={setPeriod} />
+      </>}
+      totals={list => {
+        const received = list.filter(item => item.type === 'RECEIPT')
+        const paid = list.filter(item => item.type === 'PAYMENT')
+        return [
+          { key: 'count', label: ar ? 'الحركات' : 'Entries', value: list.length },
+          received.length > 0 && { key: 'in', label: ar ? 'المستلم' : 'Received', value: <Money value={sumBy(received, item => item.amount)} symbol={symbolOf(received)} />, tone: 'success' as const },
+          paid.length > 0 && { key: 'out', label: expensesView ? (ar ? 'المصروف' : 'Spent') : (ar ? 'المدفوع' : 'Paid'), value: <Money value={sumBy(paid, item => item.amount)} symbol={symbolOf(paid)} />, tone: 'danger' as const },
+        ].filter(item => item !== false)
+      }}
+      activeRowKey={selected?.moveNo ?? null}
+      onRowSelect={item => setSelected(current => current?.moveNo === item.moveNo ? null : item)}
+      panel={panel}
+      emptyTitle={rows.length ? (ar ? 'لا توجد نتائج' : 'No results') : expensesView ? (ar ? 'لا توجد منصرفات' : 'No expenses yet') : (ar ? 'لا توجد إيصالات' : 'No receipts yet')}
+      emptyDetail={rows.length ? undefined : expensesView ? (ar ? 'أضف أول منصرف للبدء.' : 'Add an expense to begin.') : (ar ? 'أضف إيصال استلام أو دفع للبدء.' : 'Add a receipt or payment to begin.')}
+    />
     <Modal open={modal} title={draft.type === 'RECEIPT' ? (ar ? 'إيصال استلام' : 'Receipt') : (ar ? 'إيصال دفع' : 'Payment receipt')} titleIcon="currency" description={ar ? 'أدخل بيانات الحركة المالية.' : 'Enter the financial movement details.'} closeLabel={ar ? 'إغلاق' : 'Close'} busy={saving} onClose={() => !saving && setModal(false)} footer={<><Button variant="ghost" disabled={saving} onClick={() => setModal(false)}>{ar ? 'إلغاء' : 'Cancel'}</Button><Button variant="primary" loading={saving} onClick={() => void save()}>{ar ? 'حفظ الإيصال' : 'Save receipt'}</Button></>}>
       <div className="receipt-form"><div className="receipt-form-grid"><FormField label={ar ? 'التاريخ' : 'Date'} required><DateInput value={draft.receiptDate} onChange={e => setDraft({ ...draft, receiptDate: e.target.value })} /></FormField><FormField label={ar ? 'المستفيد' : 'Partner'} required><SearchableSelect value={draft.partnerId} onChange={value => setDraft({ ...draft, partnerId: value })} placeholder={ar ? 'اختر الشريك' : 'Choose partner'} options={partners.map(item => ({ value: item.partnerId.toString(), label: item.partnerName, suffix: partnerBalance && item.partnerId.toString() === draft.partnerId ? <span className={`partner-balance ${partnerBalance.amount >= 0 ? 'is-debit' : 'is-credit'}`}>{formatAmount(Math.abs(partnerBalance.amount))} {partnerBalance.currencySymbol}</span> : null }))} /></FormField><FormField label={ar ? 'الخزينة' : 'Treasury'} required><SearchableSelect value={draft.treasuryId} onChange={value => { const treasury = treasuries.find(item => item.treasuryId.toString() === value); setDraft(recalculate({ ...draft, treasuryId: value, partnerCurrencyId: treasury?.currencyId.toString() ?? draft.partnerCurrencyId }, lastEditedAmount)) }} placeholder={ar ? 'اختر الخزينة' : 'Choose treasury'} options={treasuries.filter(item => item.isActive).map(item => ({ value: item.treasuryId.toString(), label: `${ar ? item.nameAr : item.nameEn} · ${item.currencySymbol}` }))} /></FormField><FormField label={ar ? 'عملة حساب الشريك' : 'Partner account currency'} required><SearchableSelect value={draft.partnerCurrencyId} onChange={value => setDraft(recalculate({ ...draft, partnerCurrencyId: value }, lastEditedAmount))} placeholder={ar ? 'اختر العملة' : 'Choose currency'} options={currencies.filter(item => item.isActive).map(item => ({ value: item.currencyId.toString(), label: `${item.symbol} · ${ar ? item.currencyNameAr : item.currencyNameEn}`, icon: item.flagBase64 ? <img className="searchable-select-flag" src={item.flagBase64} alt="" /> : null }))} /></FormField><FormField label={draft.type === 'RECEIPT' ? (ar ? 'المبلغ المستلم فعلياً' : 'Amount received') : (ar ? 'المبلغ المدفوع فعلياً' : 'Amount paid')} hint={selectedTreasury ? `${ar ? 'عملة الخزينة' : 'Treasury currency'}: ${selectedTreasury.currencySymbol}` : undefined} required><div className="money-input"><FormattedNumberInput className="receipt-number-input" value={draft.amount} onChange={value => { setLastEditedAmount('treasury'); setDraft(recalculate({ ...draft, amount: value }, 'treasury')) }} /><span>{selectedTreasury?.currencySymbol ?? ''}</span></div></FormField><FormField label={draft.type === 'RECEIPT' ? (ar ? 'المبلغ المدفوع من الشريك' : 'Amount paid by partner') : (ar ? 'المبلغ المستلم للشريك' : 'Amount received by partner')} hint={selectedCurrency ? `${ar ? 'عملة الحساب' : 'Account currency'}: ${selectedCurrency.symbol}` : undefined} required><div className="money-input"><FormattedNumberInput className="receipt-number-input" value={draft.partnerAmount} onChange={value => { setLastEditedAmount('partner'); setDraft(recalculate({ ...draft, partnerAmount: value }, 'partner')) }} /><span>{selectedCurrency?.symbol ?? ''}</span></div></FormField><FormField label={ar ? 'سعر الصرف' : 'Exchange rate'} hint={selectedCurrency && selectedTreasury ? `1 ${selectedCurrency.symbol} = X ${selectedTreasury.currencySymbol}` : undefined} required><div className="money-input"><FormattedNumberInput className="receipt-number-input" value={draft.exchangeRate} disabled={sameCurrency} onChange={value => setDraft(recalculateAtRate(draft, value, lastEditedAmount))} /><span>{selectedCurrency?.symbol && selectedTreasury?.currencySymbol ? `${selectedTreasury.currencySymbol}/${selectedCurrency.symbol}` : selectedTreasury?.currencySymbol ?? ''}</span></div></FormField><FormField label={ar ? 'المعادِل بعملة الخزينة' : 'Treasury equivalent'} hint={ar ? 'مبلغ الشريك × سعر الصرف' : 'Partner amount × exchange rate'}><div className="receipt-local-amount">{formatAmount(localAmount)} {selectedTreasury?.currencySymbol ?? ''}</div></FormField><FormField label={ar ? 'السبب' : 'Reason'}><TextInput value={draft.reason} onChange={e => setDraft({ ...draft, reason: e.target.value })} placeholder={ar ? 'مثال: تحصيل أو إرجاع مصروفات' : 'e.g. Collection or expense refund'} /></FormField><FormField label={ar ? 'البيان' : 'Description'}><textarea className="text-input receipt-description" value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} rows={2} /></FormField></div>{error && <div className="receipt-form-error" role="alert">{error}</div>}<p className="receipt-account-note"><Icon name="info" size={16} />{ar ? 'سيتم تسجيل عملة الخزينة وعملة حساب الشريك وسعر الصرف معاً.' : 'The treasury currency, partner currency and exchange rate will be recorded together.'}</p></div>
     </Modal>

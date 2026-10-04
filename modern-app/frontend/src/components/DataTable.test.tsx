@@ -61,3 +61,27 @@ describe('DataTable', () => {
     expect(container.firstElementChild).toHaveAttribute('dir', 'rtl')
   })
 })
+
+describe('DataTable list pattern', () => {
+  it('works out the totals strip from the rows that match the search', async () => {
+    render(<DataTable columns={columns} rows={rows} rowKey={row => row.id} totals={list => [{ key: 'qty', label: 'Units', value: list.reduce((sum, row) => sum + row.qty, 0) }]} />)
+    expect(screen.getByText('Units').nextSibling).toHaveTextContent('55')
+    await userEvent.type(screen.getByRole('searchbox'), 'bru')
+    expect(screen.getByText('Units').nextSibling).toHaveTextContent('40')
+  })
+
+  it('selects a row for the side panel with a click', async () => {
+    const onRowSelect = vi.fn()
+    render(<DataTable columns={columns} rows={rows} rowKey={row => row.id} onRowSelect={onRowSelect} activeRowKey={2} panel={<aside>Panel</aside>} />)
+    await userEvent.click(screen.getByText('Brufen'))
+    expect(onRowSelect).toHaveBeenCalledWith(rows[2])
+    expect(screen.getByText('Panel')).toBeInTheDocument()
+    expect(screen.getByText('Augmentin').closest('tr')).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('uses Arabic labels without overrides', () => {
+    render(<DataTable columns={columns} rows={rows} rowKey={row => row.id} locale="ar" />)
+    expect(screen.getByRole('searchbox')).toHaveAttribute('placeholder', 'بحث')
+    expect(screen.getByText('3 صف')).toBeInTheDocument()
+  })
+})

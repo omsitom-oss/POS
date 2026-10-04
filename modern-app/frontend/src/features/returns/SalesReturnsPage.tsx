@@ -1,12 +1,13 @@
-import { useCallback, useMemo, useState } from 'react'
-import { Button, EmptyState, ErrorState, LoadingState, SearchInput, TableFooter } from '../../components/shared'
+import { useCallback, useState } from 'react'
+import { Button, ErrorState, FilterChips, Money } from '../../components/shared'
+import { DataTable, type TableColumn } from '../../components/DataTable'
+import { datePresetOptions, inDatePreset, sumBy, type DatePreset } from '../../components/listFilters'
+import { formatDay } from '../../app/formatters'
 import { Icon } from '../../components/icons'
 import { useLoadEffect } from '../../components/useLoadEffect'
-import { usePagination } from '../../components/usePagination'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
 import { InvoiceFinder } from './InvoiceFinder'
 import { SalesReturnEditor, type SalesReturnSource, type Treasury } from './SalesReturnEditor'
-import { money } from './returnModel'
 
 type SalesReturnRow = { salesReturnId: number; returnNo: string; returnDate: string; saleNo: string; customerName?: string | null; treasuryNameAr?: string | null; treasuryNameEn?: string | null; currencySymbol: string; total: number; lineCount: number }
 
@@ -14,7 +15,7 @@ type SalesReturnRow = { salesReturnId: number; returnNo: string; returnDate: str
 export function SalesReturnsPage({ locale }: { locale: Locale }) {
   const ar = locale === 'ar'
   const [rows, setRows] = useState<SalesReturnRow[]>([])
-  const [search, setSearch] = useState('')
+  const [period, setPeriod] = useState<DatePreset>('all')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -31,8 +32,16 @@ export function SalesReturnsPage({ locale }: { locale: Locale }) {
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) } finally { setLoading(false) }
   }, [ar])
   useLoadEffect(load)
-  const visible = useMemo(() => { const q = search.trim().toLocaleLowerCase(); return rows.filter(row => !q || [row.returnNo, row.saleNo, row.customerName ?? ''].some(value => value.toLocaleLowerCase().includes(q))) }, [rows, search])
-  const page = usePagination(visible)
+  const visible = rows.filter(row => inDatePreset(row.returnDate, period))
+  const columns: Array<TableColumn<SalesReturnRow>> = [
+    { key: 'returnNo', title: ar ? 'رقم المرتجع' : 'Return no.', value: row => row.returnNo, render: row => <span className="doc-no">{row.returnNo}</span> },
+    { key: 'returnDate', title: ar ? 'التاريخ' : 'Date', value: row => row.returnDate, searchable: false, render: row => formatDay(row.returnDate) },
+    { key: 'saleNo', title: ar ? 'فاتورة البيع' : 'Sales invoice', value: row => row.saleNo, render: row => <span className="doc-no">{row.saleNo}</span> },
+    { key: 'customer', title: ar ? 'العميل' : 'Customer', value: row => row.customerName ?? '', wrap: true, render: row => row.customerName ?? <span className="muted-cell">{ar ? 'عميل نقدي' : 'Walk-in'}</span> },
+    { key: 'treasury', title: ar ? 'الخزنة' : 'Treasury', value: row => (ar ? row.treasuryNameAr : row.treasuryNameEn) ?? '', searchable: false, render: row => (ar ? row.treasuryNameAr : row.treasuryNameEn) ?? <span className="muted-cell">{ar ? 'حساب العميل' : 'Customer account'}</span> },
+    { key: 'lineCount', title: ar ? 'الأسطر' : 'Lines', value: row => row.lineCount, align: 'end', searchable: false },
+    { key: 'total', title: ar ? 'المبلغ المرتجع' : 'Refund', value: row => row.total, align: 'end', searchable: false, render: row => <Money value={row.total} symbol={row.currencySymbol} /> },
+  ]
 
   async function choose(invoiceId: number) {
     setError('')
@@ -57,22 +66,26 @@ export function SalesReturnsPage({ locale }: { locale: Locale }) {
   </div>
 
   return <div className="settings-page" dir={ar ? 'rtl' : 'ltr'}>
-    <PageHeader eyebrow={ar ? 'المبيعات' : 'SALES'} title={ar ? 'مرتجعات المبيعات' : 'Sales returns'} description={ar ? 'إرجاع أصناف من فاتورة بيع مرحّلة وصرف قيمتها من الخزنة.' : 'Return items from a posted sales invoice and refund them from a treasury.'}
-      actions={<Button variant="primary" onClick={() => { setNotice(''); setError(''); setCreating(true) }}>＋ {ar ? 'مرتجع جديد' : 'New return'}</Button>} />
+    <PageHeader title={ar ? 'مرتجعات المبيعات' : 'Sales returns'} description={ar ? 'إرجاع أصناف من فاتورة بيع مرحّلة وصرف قيمتها من الخزنة.' : 'Return items from a posted sales invoice and refund them from a treasury.'}
+      actions={<Button variant="primary" onClick={() => { setNotice(''); setError(''); setCreating(true) }}><Icon name="plus" size={18} />{ar ? 'مرتجع جديد' : 'New return'}</Button>} />
     {notice && <div className="form-success" role="status">{notice}</div>}
-    <section className="receipts-toolbar"><SearchInput aria-label={ar ? 'بحث في المرتجعات' : 'Search returns'} placeholder={ar ? 'رقم المرتجع أو الفاتورة أو العميل' : 'Return no., invoice no. or customer'} value={search} onChange={event => { setSearch(event.target.value); page.resetPage() }} /></section>
     {error && <ErrorState title={ar ? 'تعذر تنفيذ العملية' : 'Request failed'} detail={error} />}
-    {loading ? <LoadingState /> : visible.length === 0 ? <EmptyState title={search ? (ar ? 'لا توجد نتائج' : 'No results') : (ar ? 'لا توجد مرتجعات مبيعات' : 'No sales returns yet')} /> : <div className="receipts-table-wrap"><table className="receipts-table">
-      <thead><tr><th>{ar ? 'رقم المرتجع' : 'Return no.'}</th><th>{ar ? 'التاريخ' : 'Date'}</th><th>{ar ? 'فاتورة البيع' : 'Sales invoice'}</th><th>{ar ? 'العميل' : 'Customer'}</th><th>{ar ? 'الخزنة' : 'Treasury'}</th><th>{ar ? 'الأسطر' : 'Lines'}</th><th>{ar ? 'المبلغ المرتجع' : 'Refund'}</th></tr></thead>
-      <tbody>{page.rows.map(row => <tr key={row.salesReturnId}>
-        <td><code>{row.returnNo}</code></td>
-        <td>{row.returnDate.slice(0, 10)}</td>
-        <td><code>{row.saleNo}</code></td>
-        <td>{row.customerName ?? <span className="muted-cell">{ar ? 'بيع مباشر' : 'Walk-in'}</span>}</td>
-        <td>{(ar ? row.treasuryNameAr : row.treasuryNameEn) ?? <span className="muted-cell">{ar ? 'حساب العميل' : 'Customer account'}</span>}</td>
-        <td className="numeric-cell">{row.lineCount}</td>
-        <td className="numeric-cell">{money(row.total)} <small>{row.currencySymbol}</small></td>
-      </tr>)}</tbody>
-    </table><TableFooter total={visible.length} locale={locale} pager={page.pager} /></div>}
+    <DataTable
+      locale={locale}
+      columns={columns}
+      rows={visible}
+      rowKey={row => row.salesReturnId}
+      loading={loading}
+      density="compact"
+      pageSize={15}
+      searchLabel={ar ? 'بحث في المرتجعات' : 'Search returns'}
+      searchPlaceholder={ar ? 'رقم المرتجع أو الفاتورة أو العميل' : 'Return no., invoice no. or customer'}
+      filters={<FilterChips label={ar ? 'الفترة' : 'Period'} options={datePresetOptions(ar)} value={period} onChange={setPeriod} />}
+      totals={list => [
+        { key: 'count', label: ar ? 'المرتجعات' : 'Returns', value: list.length },
+        { key: 'total', label: ar ? 'إجمالي المرتجع' : 'Total refunded', value: <Money value={sumBy(list, row => row.total)} symbol={list[0]?.currencySymbol} /> },
+      ]}
+      emptyTitle={rows.length ? (ar ? 'لا توجد نتائج' : 'No results') : (ar ? 'لا توجد مرتجعات مبيعات' : 'No sales returns yet')}
+    />
   </div>
 }

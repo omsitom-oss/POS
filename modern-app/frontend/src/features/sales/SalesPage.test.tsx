@@ -89,3 +89,28 @@ describe('SalesPage', () => {
     expect(container.firstElementChild).toHaveAttribute('dir', 'rtl')
   })
 })
+
+describe('SalesPage list', () => {
+  const sales = [
+    { saleId: 1, saleNo: 'S-1', saleDate: '2026-01-05T10:00:00', total: 1200, currencySymbol: 'AED', customerName: null, lineCount: 2 },
+    { saleId: 2, saleNo: 'S-2', saleDate: '2026-01-06T10:00:00', total: 300.5, currencySymbol: 'AED', customerName: 'Al Noor Clinic', lineCount: 1 },
+  ]
+
+  it('totals the invoices and filters by sale type', async () => {
+    mockFetch(references.map(reference => reference.path === '/api/sales' ? { ...reference, body: sales } : reference))
+    render(<SalesPage locale="en" branchId={1} userId={7} />)
+    expect(await screen.findByText('S-1')).toBeInTheDocument()
+    expect(screen.getByText('Total', { selector: 'dt' }).nextSibling).toHaveTextContent('1,500.50')
+    await userEvent.click(screen.getByRole('radio', { name: 'On account' }))
+    expect(screen.queryByText('S-1')).not.toBeInTheDocument()
+    expect(screen.getByText('Total', { selector: 'dt' }).nextSibling).toHaveTextContent('300.50')
+  })
+
+  it('opens an invoice in the side panel', async () => {
+    mockFetch([...references.map(reference => reference.path === '/api/sales' ? { ...reference, body: sales } : reference), { path: '/api/sales/2', body: { saleId: 2, saleNo: 'S-2', saleDate: '2026-01-06', customerName: 'Al Noor Clinic', currencySymbol: 'AED', subtotal: 310.5, discount: 10, total: 300.5, returnedTotal: 0, lines: [{ saleLineId: 9, itemNameAr: 'بنادول', itemNameEn: 'Panadol', soldQuantity: 3, returnedQuantity: 0, unitPrice: 103.5 }] } }])
+    render(<SalesPage locale="en" branchId={1} userId={7} />)
+    await userEvent.click(await screen.findByText('S-2'))
+    expect(await screen.findByText('Panadol')).toBeInTheDocument()
+    expect(screen.getByText('Subtotal').nextSibling).toHaveTextContent('310.50')
+  })
+})

@@ -2,13 +2,14 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Button, FormField, Select, TextInput, ErrorState } from '../../components/shared'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
+import { formatMoney } from '../../app/formatters'
 
 type Currency = { currencyId: number; currencyCode: string; currencyNameEn: string; currencyNameAr: string; symbol: string; isPrimary: boolean; exchangeRate: number | null; isActive: boolean; flagBase64: string | null }
 type Treasury = { treasuryId: number; nameAr: string; nameEn: string; currencyId: number; currencySymbol: string; currencyCode: string; isActive: boolean; flagBase64?: string | null }
 const amount = (value: string) => Number(value) || 0
 type LoadedBalance = { treasuryId: string; balance: number | null }
 const loadTreasuryBalance = (treasuryId: string) => fetch(`/api/transactions/treasury/${treasuryId}`).then(response => response.ok ? response.json() as Promise<{ rows: Array<{ foreignDebit: number; foreignCredit: number }> }> : Promise.reject(new Error('balance'))).then(statement => statement.rows.reduce((total, row) => total + row.foreignDebit - row.foreignCredit, 0), () => null)
-const formatAmount = (value: number) => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const formatAmount = (value: number) => formatMoney(value)
 
 function TreasuryCard({ treasury, balance, loading, locale, direction, children }: { treasury?: Treasury; balance: number | null; loading: boolean; locale: Locale; direction: 'source' | 'destination'; children: ReactNode }) {
   const ar = locale === 'ar'; const source = direction === 'source'

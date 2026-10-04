@@ -11,6 +11,8 @@ public static class SalesEndpoints
     {
         var group=endpoints.MapGroup("/api/sales");
         group.MapGet("",async(int? branchId,DateTime? from,DateTime? to,ClaimsPrincipal user,SalesService service,CancellationToken ct)=>Results.Ok(await service.GetAsync(user.ForRead(branchId),from,to,ct))).RequirePermission(PermissionCodes.SalesView);
+        // One invoice with its lines, for the side panel on the sales list. Other branches answer as not found.
+        group.MapGet("/{id:long}",async(long id,ClaimsPrincipal user,SalesReturnService service,CancellationToken ct)=>await service.GetSaleBranchIdAsync(id,ct) is int branch&&user.CanAccessBranch(branch)&&await service.GetSourceAsync(id,ct) is { } item?Results.Ok(item):Results.NotFound()).RequirePermission(PermissionCodes.SalesView);
         group.MapPost("",async(SaleWriteRequest request,ClaimsPrincipal user,SalesService service,CancellationToken ct)=>{try{return Results.Created("/api/sales",await service.CreateAsync(request with{BranchId=user.ForWrite(request.BranchId),SavedBy=user.GetUserId()},ct));}catch(SalesException ex){return Results.Problem(ex.Message,statusCode:ex.StatusCode);}catch(TransactionException ex){return Results.Problem(ex.Message,statusCode:ex.StatusCode);}}).RequirePermission(PermissionCodes.SalesCreate);
         return endpoints;
     }

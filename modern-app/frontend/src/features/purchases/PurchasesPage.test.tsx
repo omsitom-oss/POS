@@ -33,9 +33,9 @@ describe('PurchasesPage', () => {
     render(<PurchasesPage locale="en" />)
     expect(await screen.findByText('PUR-0001')).toBeInTheDocument()
     expect(invoiceNumbers()).toEqual(['PUR-0001'])
-    await userEvent.click(screen.getByRole('button', { name: 'Initial invoices' }))
+    await userEvent.click(screen.getByRole('radio', { name: /Initial invoices/ }))
     expect(invoiceNumbers()).toEqual(['PUR-0002'])
-    await userEvent.click(screen.getByRole('button', { name: 'Import invoices' }))
+    await userEvent.click(screen.getByRole('radio', { name: /Import invoices/ }))
     expect(invoiceNumbers()).toEqual(['PUR-0003'])
   })
 

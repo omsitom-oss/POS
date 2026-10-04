@@ -1,12 +1,12 @@
 // Shared types and refund arithmetic for the sales and purchase return screens.
 // The server recomputes everything on save; this only previews what the return will refund.
-import { localDate } from '../../app/formatters'
+import { formatMoney, localDate } from '../../app/formatters'
 
 export type ReturnableInvoice = { invoiceId: number; invoiceNo: string; invoiceDate: string; partnerName?: string | null; currencySymbol: string; total: number; returnedTotal: number }
 
 export type InvoiceTotals = { subtotal: number; discount: number; total: number; returnedTotal: number }
 
-export const money = (value: number) => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+export const money = (value: number) => formatMoney(value)
 export const quantity = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 3 })
 export const today = () => localDate()
 

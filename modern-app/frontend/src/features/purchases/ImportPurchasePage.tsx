@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, FormField, IconButton, Modal, Select, TextInput } from '../../components/shared'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
-import { localDate } from '../../app/formatters'
+import { formatMoney, localDate } from '../../app/formatters'
 
 type Item = { itemId:number; nameAr:string; nameEn:string; baseUnitAr?:string|null; baseUnitEn?:string|null; lastPurchasePrice?:number|null }
 type Unit = { unitSettingId:number; unitAr?:string|null; unitEn?:string|null; isBase:boolean; conversionToBase:number }
@@ -28,7 +28,7 @@ const costTypes = [
   ['OTHERS', 'Others', 'أخرى'],
 ] as const
 
-function money(value:number){ return value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) }
+function money(value:number){ return formatMoney(value) }
 function costTypeLabel(value:string, ar:boolean){ const option=costTypes.find(x=>x[0]===value); return option ? option[ar?2:1] : value }
 
 export function ImportPurchasePage({ locale, purchaseId, onBack }: { locale:Locale; purchaseId?:number; onBack:()=>void }) {

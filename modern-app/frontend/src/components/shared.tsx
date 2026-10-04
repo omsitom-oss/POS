@@ -1,6 +1,7 @@
 import { Children, isValidElement, useEffect, useRef, useState, type ChangeEvent, type HTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { Icon, type IconName } from './icons'
 import { pageSizeOptions, type Pager } from './usePagination'
+import { formatMoney } from '../app/formatters'
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'quiet' | 'danger' | 'icon'; size?: 'small' | 'medium'; loading?: boolean }
 
@@ -162,4 +163,23 @@ export function Modal({ open, title, titleIcon, description, children, onClose, 
 
 export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', closeLabel = 'Close', onCancel, onConfirm, busy = false, danger = false, confirmDisabled = false }: { open: boolean; title: string; message: string; confirmLabel?: string; cancelLabel?: string; closeLabel?: string; onCancel: () => void; onConfirm: () => void; busy?: boolean; danger?: boolean; confirmDisabled?: boolean }) {
   return <Modal open={open} title={title} closeLabel={closeLabel} onClose={onCancel} busy={busy} footer={<><Button disabled={busy} onClick={onCancel}>{cancelLabel}</Button><Button variant={danger ? 'danger' : 'primary'} disabled={confirmDisabled} loading={busy} onClick={onConfirm}>{confirmLabel}</Button></>}><p className="dialog-message">{message}</p></Modal>
+}
+
+/** Single-choice filter shown as a row of joined chips (date presets, invoice type, status). */
+export function FilterChips<V extends string>({ label, options, value, onChange }: { label: string; options: Array<{ value: V; label: string; count?: number }>; value: V; onChange: (value: V) => void }) {
+  return <div className="filter-chips" role="radiogroup" aria-label={label}>{options.map(option => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} className={value === option.value ? 'is-active' : ''} onClick={() => onChange(option.value)}>{option.label}{option.count != null && <span className="filter-chip-count">{option.count}</span>}</button>)}</div>
+}
+
+/** An amount as the shop reads it: Latin tabular digits, two decimals, the currency symbol after it in a quieter tone. */
+export function Money({ value, symbol, className = '' }: { value: number; symbol?: string | null; className?: string }) {
+  return <span className={`money ${className}`}><span className="money-amount">{formatMoney(value)}</span>{symbol && <span className="money-symbol">{symbol}</span>}</span>
+}
+
+/** Side panel beside a list: shows the selected row's details and actions without leaving the page. */
+export function DetailPanel({ title, badge, closeLabel, onClose, actions, children }: { title: ReactNode; badge?: ReactNode; closeLabel: string; onClose: () => void; actions?: ReactNode; children: ReactNode }) {
+  return <aside className="detail-panel" aria-label={typeof title === 'string' ? title : undefined}><header className="detail-panel-header"><div className="detail-panel-title"><h2>{title}</h2>{badge}</div><IconButton label={closeLabel} variant="ghost" onClick={onClose}><Icon name="close" size={17} /></IconButton></header><div className="detail-panel-body">{children}</div>{actions && <footer className="detail-panel-actions">{actions}</footer>}</aside>
+}
+
+export function DetailList({ items }: { items: Array<{ label: string; value: ReactNode; strong?: boolean } | false | null | undefined> }) {
+  return <dl className="detail-list">{items.filter(item => item !== false && item != null).map(item => <div key={item.label} className={item.strong ? 'is-strong' : ''}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl>
 }
