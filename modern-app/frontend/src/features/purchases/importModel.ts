@@ -37,6 +37,7 @@ export type ImportCost = {
   payeeAccountCode: string | null
   payeeName: string
   description: string | null
+  paidTo: string | null
 }
 
 export type ImportShipment = {
@@ -96,6 +97,7 @@ export type CostDraft = {
   payeeTreasuryId: string
   payeeAccountCode: string
   description: string
+  paidTo: string
 }
 
 export const costTypes: Array<[code: string, en: string, ar: string]> = [

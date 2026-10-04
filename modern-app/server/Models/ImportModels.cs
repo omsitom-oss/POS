@@ -25,7 +25,9 @@ public sealed record ImportCostWriteRequest(
     int? PayeePartnerId = null,
     int? PayeeTreasuryId = null,
     string? PayeeAccountCode = null,
-    string? Description = null);
+    string? Description = null,
+    // Who took the money, when a cost is paid from a till to someone with no account in the system.
+    string? PaidTo = null);
 
 public sealed record ImportLineDetail(
     long PurchaseLineId,
@@ -58,7 +60,8 @@ public sealed record ImportCostDetail(
     int? PayeeTreasuryId,
     string? PayeeAccountCode,
     string PayeeName,
-    string? Description);
+    string? Description,
+    string? PaidTo);
 
 public sealed record ImportShipmentDetail(
     long PurchaseId,
