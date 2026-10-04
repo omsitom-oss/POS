@@ -90,7 +90,7 @@ public sealed class ChequeService(DbConnectionFactory factory, TransactionServic
         if (action is not ("DEPOSIT" or "CLEAR" or "BOUNCE" or "RETURN" or "CANCEL")) throw new ChequeException("Action must be DEPOSIT, CLEAR, BOUNCE, RETURN or CANCEL.");
         var note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         if (note?.Length > 250) throw new ChequeException("The note must be 250 characters or fewer.");
-        var date = (request.Date ?? DateTime.UtcNow).Date;
+        var date = (request.Date ?? DateTime.Today).Date;
 
         await using var db = await OpenAsync(ct);
         await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);

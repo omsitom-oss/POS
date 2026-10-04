@@ -5,16 +5,18 @@ import { ReturnSummary } from './ReturnSummary'
 import { enteredQuantity, money, quantity, quantityErrors, refundPreview, today } from './returnModel'
 
 export type SalesReturnSource = {
-  saleId: number; saleNo: string; saleDate: string; customerName?: string | null; treasuryId: number; currencyId: number; currencySymbol: string
+  saleId: number; saleNo: string; saleDate: string; customerPartnerId?: number | null; customerName?: string | null; treasuryId?: number | null; currencyId: number; currencySymbol: string
   subtotal: number; discount: number; total: number; returnedTotal: number
   lines: Array<{ saleLineId: number; itemId: number; itemCode: string; itemNameAr: string; itemNameEn: string; soldQuantity: number; returnedQuantity: number; returnableQuantity: number; unitPrice: number }>
 }
 export type Treasury = { treasuryId: number; nameAr: string; nameEn: string; currencyId: number; currencySymbol: string; isActive: boolean }
 
 // Return quantities per invoice line, the treasury the refund leaves from, and a confirmation before posting.
+// An invoice saved without a treasury was sold on the customer's account, so its return is credited to the customer's account and no treasury is chosen.
 export function SalesReturnEditor({ ar, source, treasuries, onCancel, onSaved }: { ar: boolean; source: SalesReturnSource; treasuries: Treasury[]; onCancel: () => void; onSaved: (returnNo: string) => void }) {
   const [quantities, setQuantities] = useState<Record<number, string>>({})
-  const [treasuryId, setTreasuryId] = useState(String(source.treasuryId))
+  const onAccount = source.treasuryId == null
+  const [treasuryId, setTreasuryId] = useState(source.treasuryId ? String(source.treasuryId) : '')
   const [returnDate, setReturnDate] = useState(today())
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
@@ -32,14 +34,14 @@ export function SalesReturnEditor({ ar, source, treasuries, onCancel, onSaved }:
     setError('')
     if (Object.keys(errors).length) { setError(ar ? 'صحّح الكميات المظللة أولاً.' : 'Fix the highlighted quantities first.'); return }
     if (!returning.length) { setError(ar ? 'أدخل كمية مرتجعة لسطر واحد على الأقل.' : 'Enter a quantity to return for at least one line.'); return }
-    if (!treasuryId) { setError(ar ? 'اختر الخزنة التي يُصرف منها المبلغ.' : 'Choose the treasury the refund is paid from.'); return }
+    if (!onAccount && !treasuryId) { setError(ar ? 'اختر الخزنة التي يُصرف منها المبلغ.' : 'Choose the treasury the refund is paid from.'); return }
     setConfirming(true)
   }
 
   async function save() {
     setSaving(true)
     try {
-      const response = await fetch('/api/sales-returns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ saleId: source.saleId, treasuryId: Number(treasuryId), returnDate, reason: reason.trim() || null, lines: returning.map(entry => ({ lineId: entry.line.saleLineId, quantity: entry.qty })) }) })
+      const response = await fetch('/api/sales-returns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ saleId: source.saleId, treasuryId: onAccount ? null : Number(treasuryId), returnDate, reason: reason.trim() || null, lines: returning.map(entry => ({ lineId: entry.line.saleLineId, quantity: entry.qty })) }) })
       if (!response.ok) { const problem = await response.json().catch(() => null) as { detail?: string } | null; throw new Error(problem?.detail ?? (ar ? 'تعذر حفظ المرتجع.' : 'Could not save the return.')) }
       onSaved((await response.json() as { returnNo: string }).returnNo)
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); setConfirming(false) } finally { setSaving(false) }
@@ -62,10 +64,14 @@ export function SalesReturnEditor({ ar, source, treasuries, onCancel, onSaved }:
       </table></div>
     </section>
     <ReturnSummary ar={ar} currencySymbol={source.currencySymbol} returnDate={returnDate} onReturnDate={setReturnDate} reason={reason} onReason={setReason} refund={refund} error={error} saving={saving} saveLabel={ar ? 'حفظ المرتجع' : 'Save return'} onCancel={onCancel} onSave={review}>
-      <FormField label={ar ? 'صرف المبلغ من الخزنة' : 'Refund from treasury'} required><Select value={treasuryId} onChange={event => setTreasuryId(event.target.value)} aria-label={ar ? 'صرف المبلغ من الخزنة' : 'Refund from treasury'}><option value="">{ar ? 'اختر الخزنة' : 'Choose treasury'}</option>{treasuries.map(item => <option key={item.treasuryId} value={item.treasuryId}>{ar ? item.nameAr : item.nameEn} · {item.currencySymbol}</option>)}</Select></FormField>
+      {onAccount
+        ? <p className="field-hint" role="note">{ar ? `تُقيَّد قيمة المرتجع لحساب العميل ${source.customerName ?? ''}، دون صرف من الخزنة.` : `The refund is credited to ${source.customerName ?? 'the customer'}'s account; nothing is paid out of a treasury.`}</p>
+        : <FormField label={ar ? 'صرف المبلغ من الخزنة' : 'Refund from treasury'} required><Select value={treasuryId} onChange={event => setTreasuryId(event.target.value)} aria-label={ar ? 'صرف المبلغ من الخزنة' : 'Refund from treasury'}><option value="">{ar ? 'اختر الخزنة' : 'Choose treasury'}</option>{treasuries.map(item => <option key={item.treasuryId} value={item.treasuryId}>{ar ? item.nameAr : item.nameEn} · {item.currencySymbol}</option>)}</Select></FormField>}
     </ReturnSummary>
     <ConfirmDialog open={confirming} busy={saving} title={ar ? 'تأكيد المرتجع' : 'Confirm return'}
-      message={ar ? `سيتم إرجاع الأصناف إلى المخزون وصرف ${money(refund.net)} ${source.currencySymbol} من ${treasury?.nameAr ?? ''}.` : `The items go back into stock and ${money(refund.net)} ${source.currencySymbol} is paid out of ${treasury?.nameEn ?? ''}.`}
+      message={onAccount
+        ? (ar ? `سيتم إرجاع الأصناف إلى المخزون وقيد ${money(refund.net)} ${source.currencySymbol} لحساب ${source.customerName ?? 'العميل'}.` : `The items go back into stock and ${money(refund.net)} ${source.currencySymbol} is credited to ${source.customerName ?? 'the customer'}'s account.`)
+        : (ar ? `سيتم إرجاع الأصناف إلى المخزون وصرف ${money(refund.net)} ${source.currencySymbol} من ${treasury?.nameAr ?? ''}.` : `The items go back into stock and ${money(refund.net)} ${source.currencySymbol} is paid out of ${treasury?.nameEn ?? ''}.`)}
       confirmLabel={ar ? 'تأكيد الإرجاع' : 'Confirm return'} cancelLabel={ar ? 'رجوع' : 'Back'} closeLabel={ar ? 'إغلاق' : 'Close'} onCancel={() => setConfirming(false)} onConfirm={() => void save()} />
   </div>
 }

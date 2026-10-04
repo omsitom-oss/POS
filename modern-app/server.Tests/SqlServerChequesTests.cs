@@ -12,7 +12,7 @@ public sealed class SqlServerChequesTests(SqlServerApiFixture fixture) : IClassF
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
     private static void SkipWithoutSqlServer() => Assert.SkipWhen(string.IsNullOrWhiteSpace(SqlServerApiFixture.ServerConnectionString), "POS_TEST_SQLSERVER is not set.");
     private HttpClient Admin => fixture.Client(fixture.AdminToken);
-    private static string Today => DateTime.UtcNow.ToString("yyyy-MM-dd");
+    private static string Today => DateTime.Today.ToString("yyyy-MM-dd");
 
     [Fact]
     public async Task A_received_cheque_settles_the_customer_at_once_and_reaches_the_bank_only_when_it_clears()
@@ -51,7 +51,7 @@ public sealed class SqlServerChequesTests(SqlServerApiFixture fixture) : IClassF
         Assert.Equal(bankBefore + 250m, await TreasuryBalanceAsync(bank));
         Assert.Equal(0m, await fixture.Database.ScalarAsync<decimal>($"SELECT SUM(Debit-Credit) FROM dbo.Transactions WHERE RefNo=N'{voucherNo}' AND AccountId=N'1250'", Ct));
         // Dated the day it happened, not the due date, and both lines carry the branch.
-        Assert.Equal(0, await fixture.Database.CountAsync($"SELECT COUNT(*) FROM dbo.Transactions WHERE TransactionType=N'CHEQUE_CLEAR' AND RefNo=N'{voucherNo}' AND (TransactionDate<>CONVERT(date,SYSUTCDATETIME()) OR BranchId IS NULL OR BranchId<>{fixture.BranchA})", Ct));
+        Assert.Equal(0, await fixture.Database.CountAsync($"SELECT COUNT(*) FROM dbo.Transactions WHERE TransactionType=N'CHEQUE_CLEAR' AND RefNo=N'{voucherNo}' AND (TransactionDate<>N'{Today}' OR BranchId IS NULL OR BranchId<>{fixture.BranchA})", Ct));
         Assert.Equal(partnerBefore - 250m, await PartnerBalanceAsync(partner));
 
         var events = cleared.GetProperty("events").EnumerateArray().ToArray();
@@ -142,7 +142,7 @@ public sealed class SqlServerChequesTests(SqlServerApiFixture fixture) : IClassF
         Assert.Contains(first.GetProperty("receiptNo").GetString()!, await Refused(new { type = "RECEIPT", method = "CHEQUE", chequeNo = " DUP-1 ", chequeDueDate = Today, partnerId = partner, treasuryId = bank, amount = 10m, exchangeRate = 1m }, HttpStatusCode.Conflict));
 
         var id = first.GetProperty("chequeId").GetInt32();
-        var early = await Admin.PostAsJsonAsync($"/api/cheques/{id}/actions", new { action = "CLEAR", date = DateTime.UtcNow.AddDays(-3) }, Ct);
+        var early = await Admin.PostAsJsonAsync($"/api/cheques/{id}/actions", new { action = "CLEAR", date = DateTime.Today.AddDays(-3) }, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, early.StatusCode);
         Assert.Contains("before the voucher date", await early.Content.ReadAsStringAsync(Ct));
         Assert.Equal(HttpStatusCode.BadRequest, (await Admin.PostAsJsonAsync($"/api/cheques/{id}/actions", new { action = "LOSE" }, Ct)).StatusCode);
@@ -211,7 +211,7 @@ public sealed class SqlServerChequesTests(SqlServerApiFixture fixture) : IClassF
     private async Task<int> PartnerAsync() => await fixture.Database.CountAsync("SELECT PartnerId FROM dbo.Partners WHERE PartnerCode=N'P-SEC'", Ct);
 
     private async Task<HttpResponseMessage> PostChequeVoucherAsync(string type, int partner, string chequeNo, decimal amount) =>
-        await Admin.PostAsJsonAsync("/api/receipts", new { type, method = "CHEQUE", chequeNo, chequeDueDate = DateTime.UtcNow.AddDays(30).ToString("yyyy-MM-dd"), partnerId = partner, treasuryId = await BankAsync(), amount, exchangeRate = 1m }, Ct);
+        await Admin.PostAsJsonAsync("/api/receipts", new { type, method = "CHEQUE", chequeNo, chequeDueDate = DateTime.Today.AddDays(30).ToString("yyyy-MM-dd"), partnerId = partner, treasuryId = await BankAsync(), amount, exchangeRate = 1m }, Ct);
 
     private async Task<JsonElement> ChequeVoucherAsync(string type, int partner, string chequeNo, decimal amount)
     {

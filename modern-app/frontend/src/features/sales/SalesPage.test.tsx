@@ -65,6 +65,23 @@ describe('SalesPage', () => {
     })
   })
 
+  it('puts a customer sale on account without a treasury', async () => {
+    const withCustomer = references.map(reference => reference.path === '/api/partners/options' ? { ...reference, body: [{ partnerId: 9, partnerName: 'Al Noor Clinic', status: 'ACTIVE', partnerTypeCode: 'CLIENT' }] } : reference)
+    const fetchMock = mockFetch([...withCustomer, { method: 'POST', path: '/api/sales', body: { saleNo: 'S-000124' } }])
+    render(<SalesPage locale="en" branchId={1} userId={7} />)
+    await openNewInvoice()
+    await scan('BRU-400')
+    await userEvent.click(screen.getByRole('button', { name: /Customer sale/ }))
+    expect(screen.queryByRole('button', { name: /^Treasury/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent('settled later with a receipt')
+    await userEvent.click(screen.getByRole('button', { name: /^Customer\b(?! sale)/ }))
+    await userEvent.click(screen.getByRole('option', { name: /Al Noor Clinic/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Save invoice/ }))
+    expect(await screen.findByText(/Invoice saved: S-000124/)).toBeInTheDocument()
+    const [, init] = fetchMock.mock.calls.find(([url, request]) => url === '/api/sales' && request?.method === 'POST')!
+    expect(JSON.parse(String(init?.body))).toMatchObject({ customerPartnerId: 9, treasuryId: null })
+  })
+
   it('renders right-to-left in Arabic', async () => {
     mockFetch(references)
     const { container } = render(<SalesPage locale="ar" branchId={1} userId={7} />)

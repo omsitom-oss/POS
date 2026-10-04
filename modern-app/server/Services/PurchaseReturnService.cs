@@ -121,7 +121,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             var source = (await ReadSourceAsync(db, tx, request.PurchaseId, 0, ct))!;
             var returning = Match(source, requested);
 
-            var returnDate = (request.ReturnDate ?? DateTime.UtcNow).Date;
+            var returnDate = (request.ReturnDate ?? DateTime.Today).Date;
             if (returnDate < source.PurchaseDate.Date) throw new PurchaseReturnException("The return date cannot be before the invoice date.");
 
             var gross = returning.Sum(item => item.Quantity * item.Line.UnitCost);
@@ -131,7 +131,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
 
             await using var sequence = db.CreateCommand();
             sequence.Transaction = tx;
-            sequence.CommandText = "SELECT ISNULL(MAX(TRY_CONVERT(int,RIGHT(ReturnNo,5))),0)+1 FROM dbo.PurchaseReturns WITH (UPDLOCK,HOLDLOCK) WHERE BranchId=@branch AND ReturnNo LIKE @prefix";
+            sequence.CommandText = "SELECT ISNULL(MAX(TRY_CONVERT(int,SUBSTRING(ReturnNo,LEN(@prefix),20))),0)+1 FROM dbo.PurchaseReturns WITH (UPDLOCK,HOLDLOCK) WHERE BranchId=@branch AND ReturnNo LIKE @prefix";
             Add(sequence, "@branch", source.BranchId, DbType.Int32);
             Add(sequence, "@prefix", $"PR-{source.BranchId}-%", DbType.String);
             var returnNo = $"PR-{source.BranchId}-{Convert.ToInt32(await sequence.ExecuteScalarAsync(ct)):D5}";
@@ -205,7 +205,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             Match(source, lines);
 
             // The return is dated the day it is approved, so the ledger and the reports put it in the same period.
-            var postedOn = DateTime.UtcNow.Date;
+            var postedOn = DateTime.Today;
             await using (var update = db.CreateCommand())
             {
                 update.Transaction = tx;

@@ -18,11 +18,12 @@ public sealed class ReceiptService(DbConnectionFactory factory, TransactionServi
         var partnerAmount = request.PartnerAmount ?? request.Amount;
         var expectedTreasuryAmount = Math.Round(partnerAmount * request.ExchangeRate, 4, MidpointRounding.AwayFromZero);
         if (Math.Abs(expectedTreasuryAmount - request.Amount) > 0.01m) throw new ReceiptException("The treasury amount must equal the partner amount multiplied by the exchange rate.");
-        var receiptDate = (request.ReceiptDate ?? DateTime.UtcNow).Date;
+        var receiptDate = (request.ReceiptDate ?? DateTime.Today).Date;
         var receiptNumber = await NextReceiptNumberAsync(db, receiptDate, type, ct);
         var receiptNo = $"{(byCheque ? "CHQ" : "CSH")}-{(type == "RECEIPT" ? "IN" : "OUT")}-{receiptDate:ddMMyy}-{receiptNumber:D4}";
-        var partnerAccount = string.IsNullOrWhiteSpace(request.PartnerAccountId) ? $"PARTNER:{request.PartnerId}" : request.PartnerAccountId.Trim();
-        var treasuryAccount = string.IsNullOrWhiteSpace(request.TreasuryAccountId) ? $"TREASURY:{request.TreasuryId}" : request.TreasuryAccountId.Trim();
+        // The accounts follow from the partner and treasury; account codes sent by the client are ignored so a receipt cannot post to an arbitrary account.
+        var partnerAccount = $"PARTNER:{request.PartnerId}";
+        var treasuryAccount = $"TREASURY:{request.TreasuryId}";
         var receiptLine = new TransactionLineRequest(partnerAccount, request.PartnerId, null, type == "RECEIPT" ? 0 : request.Amount, type == "RECEIPT" ? request.Amount : 0, type == "RECEIPT" ? 0 : partnerAmount, type == "RECEIPT" ? partnerAmount : 0, partnerCurrencyId, request.ExchangeRate);
         if (!byCheque)
         {
@@ -97,14 +98,12 @@ public sealed class ReceiptService(DbConnectionFactory factory, TransactionServi
         if (request.ExchangeRate <= 0) throw new ReceiptException("Exchange rate must be greater than zero.");
         if (request.PartnerCurrencyId is 0 or < 0) throw new ReceiptException("Choose the partner account currency.");
         if (request.PartnerAmount is 0 or < 0) throw new ReceiptException("Partner amount must be greater than zero.");
-        if (request.PartnerAccountId?.Trim().Length > 50 || request.TreasuryAccountId?.Trim().Length > 50) throw new ReceiptException("Account IDs must be 50 characters or fewer.");
         var method = request.Method?.Trim().ToUpperInvariant();
         if (method is not (null or "" or "CASH" or "CHEQUE")) throw new ReceiptException("Payment method must be CASH or CHEQUE.");
         if (method != "CHEQUE") return;
         if (string.IsNullOrWhiteSpace(request.ChequeNo)) throw new ReceiptException("Enter the cheque number.");
         if (request.ChequeNo.Trim().Length > 50) throw new ReceiptException("Cheque number must be 50 characters or fewer.");
         if (request.ChequeDueDate is null) throw new ReceiptException("Enter the cheque due date.");
-        if (!string.IsNullOrWhiteSpace(request.TreasuryAccountId)) throw new ReceiptException("A cheque cannot be posted to a custom treasury account.");
     }
 
     private static bool IsCheque(ReceiptWriteRequest request) => string.Equals(request.Method?.Trim(), "CHEQUE", StringComparison.OrdinalIgnoreCase);

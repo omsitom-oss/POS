@@ -4,6 +4,7 @@ import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
+import { localDate } from '../../app/formatters'
 
 type Receipt = { moveNo: number; receiptNo: string; type: 'RECEIPT' | 'PAYMENT'; receiptDate: string; partnerId: number; partnerName: string | null; treasuryId: number; treasuryName: string | null; currencyId: number; currencyCode: string; currencySymbol: string; amount: number; partnerAmount: number; partnerCurrencyCode: string; partnerCurrencySymbol: string; exchangeRate: number; reason: string | null; description: string | null; method?: 'CASH' | 'CHEQUE'; chequeNo?: string | null; chequeDueDate?: string | null; chequeStatus?: string | null }
 type Partner = { partnerId: number; partnerCode: string; partnerName: string; status: string }
@@ -12,7 +13,7 @@ type Currency = { currencyId: number; currencyCode: string; currencyNameEn: stri
 type PartnerBalance = { amount: number; debit: number; credit: number; currencyId: number; currencyCode: string; currencySymbol: string }
 type CompanyProfile = { companyName: string; companyAddress: string; companyPhone1: string; companyPhone2: string; companyMobileNo: string; companyFax: string; companyEmail: string; companyWebsite: string; logoBase64: string | null; logoContentType: string | null }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localDate()
 const formatAmount = (value: number | string) => (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const escapeHtml = (value: string | null | undefined) => (value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] ?? character)
 const smallNumberWordsEn = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']

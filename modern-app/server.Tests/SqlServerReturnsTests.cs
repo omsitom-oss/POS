@@ -57,6 +57,52 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
     }
 
     [Fact]
+    public async Task A_customer_sale_goes_on_account_without_a_treasury_and_its_return_credits_the_customer()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var customer = await CustomerAsync();
+        var x = await NewItemAsync("SR-ACC");
+        await BuyAsync(refs, 0, (x, 5, 5m, null));
+
+        // A customer sale cannot take a till, and a walk-in sale cannot skip one.
+        var withTill = await Admin.PostAsJsonAsync("/api/sales", new { customerPartnerId = customer, treasuryId = refs.Treasury, currencyId = refs.Currency, lines = new[] { new { itemId = x, quantity = 1m, unitPrice = 8m } } }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, withTill.StatusCode);
+        Assert.Contains("customer's account", await withTill.Content.ReadAsStringAsync(Ct));
+        var walkInWithoutTill = await Admin.PostAsJsonAsync("/api/sales", new { currencyId = refs.Currency, lines = new[] { new { itemId = x, quantity = 1m, unitPrice = 8m } } }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, walkInWithoutTill.StatusCode);
+
+        var response = await Admin.PostAsJsonAsync("/api/sales", new { customerPartnerId = customer, currencyId = refs.Currency, lines = new[] { new { itemId = x, quantity = 3m, unitPrice = 8m } } }, Ct);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var saleId = body.GetProperty("saleId").GetInt64(); var saleNo = body.GetProperty("saleNo").GetString()!;
+        Assert.Equal(0, await fixture.Database.CountAsync($"SELECT COUNT(*) FROM dbo.Sales WHERE SaleId={saleId} AND TreasuryId IS NOT NULL", Ct));
+        Assert.Equal(24m, await fixture.Database.ScalarAsync<decimal>($"SELECT Debit FROM dbo.Transactions WHERE RefNo=N'{saleNo}' AND AccountId=N'PARTNER:{customer}' AND PartnerId={customer} AND TreasuryId IS NULL", Ct));
+        Assert.Equal(0, await fixture.Database.CountAsync($"SELECT COUNT(*) FROM dbo.Transactions WHERE RefNo=N'{saleNo}' AND TreasuryId IS NOT NULL", Ct));
+        Assert.Equal(24m, await CustomerBalanceAsync(customer, refs));
+        var listed = await Admin.GetFromJsonAsync<JsonElement[]>("/api/sales", Ct);
+        Assert.Equal(JsonValueKind.Null, listed!.Single(row => row.GetProperty("saleNo").GetString() == saleNo).GetProperty("treasuryName").ValueKind);
+
+        var source = await Admin.GetFromJsonAsync<JsonElement>($"/api/sales-returns/invoices/{saleId}", Ct);
+        Assert.Equal(JsonValueKind.Null, source.GetProperty("treasuryId").ValueKind);
+        Assert.Equal(customer, source.GetProperty("customerPartnerId").GetInt32());
+        var line = source.GetProperty("lines")[0].GetProperty("saleLineId").GetInt64();
+        var paidOut = await Admin.PostAsJsonAsync("/api/sales-returns", new { saleId, treasuryId = refs.Treasury, lines = new[] { new { lineId = line, quantity = 1m } } }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, paidOut.StatusCode);
+
+        var returned = await Admin.PostAsJsonAsync("/api/sales-returns", new { saleId, lines = new[] { new { lineId = line, quantity = 1m } } }, Ct);
+        Assert.Equal(HttpStatusCode.Created, returned.StatusCode);
+        var returnBody = await returned.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var returnNo = returnBody.GetProperty("returnNo").GetString()!;
+        Assert.Equal(JsonValueKind.Null, returnBody.GetProperty("treasuryId").ValueKind);
+        Assert.Equal(8m, await fixture.Database.ScalarAsync<decimal>($"SELECT Credit FROM dbo.Transactions WHERE RefNo=N'{returnNo}' AND AccountId=N'PARTNER:{customer}' AND PartnerId={customer}", Ct));
+        Assert.Equal(0, await fixture.Database.CountAsync($"SELECT COUNT(*) FROM dbo.Transactions WHERE RefNo=N'{returnNo}' AND TreasuryId IS NOT NULL", Ct));
+        Assert.Equal(16m, await CustomerBalanceAsync(customer, refs));
+        var returns = await Admin.GetFromJsonAsync<JsonElement[]>("/api/sales-returns", Ct);
+        Assert.Equal(JsonValueKind.Null, returns!.Single(row => row.GetProperty("returnNo").GetString() == returnNo).GetProperty("treasuryNameEn").ValueKind);
+    }
+
+    [Fact]
     public async Task A_sales_return_refuses_bad_requests_with_a_message()
     {
         SkipWithoutSqlServer();
@@ -265,6 +311,22 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
     }
 
     private Task<int> StockAsync(long item) => fixture.Database.CountAsync($"SELECT COALESCE(SUM(Quantity),0) FROM dbo.StockMovements WHERE ItemId={item} AND BranchId={fixture.BranchA} AND PostingStatus=N'POSTED'", Ct);
+
+    private async Task<int> CustomerAsync()
+    {
+        await fixture.Database.ExecuteAsync("""
+            IF NOT EXISTS (SELECT 1 FROM dbo.Partners WHERE PartnerCode=N'P-ACC')
+                INSERT dbo.Partners(PartnerCode,PartnerName,Status,PartnerTypeSettingId) SELECT N'P-ACC',N'Account customer',N'ACTIVE',PartnerTypeSettingId FROM dbo.Partners WHERE PartnerCode=N'P-SEC';
+            """, "customer", Ct);
+        return await fixture.Database.CountAsync("SELECT PartnerId FROM dbo.Partners WHERE PartnerCode=N'P-ACC'", Ct);
+    }
+
+    // Debit minus credit on the customer: what they still owe us.
+    private async Task<decimal> CustomerBalanceAsync(int customer, Refs refs)
+    {
+        var balance = await Admin.GetFromJsonAsync<JsonElement>($"/api/transactions/partner/{customer}/balance?currencyId={refs.Currency}", Ct);
+        return balance.GetProperty("amount").GetDecimal();
+    }
 
     // Debit minus credit on the supplier, in the purchase currency: negative while we owe them.
     private async Task<decimal> SupplierBalanceAsync(Refs refs)

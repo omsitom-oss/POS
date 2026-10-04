@@ -1,3 +1,4 @@
+import { localDate } from '../../app/formatters'
 // Types, labels and rules for the cheques screen. The server enforces the same moves (ChequeService.Transition);
 // these only decide which buttons to offer and what to explain.
 
@@ -57,8 +58,9 @@ export function actionEffect(cheque: Pick<Cheque, 'direction' | 'status'>, actio
 
 export const isOpen = (status: ChequeStatus) => status === 'PENDING' || status === 'DEPOSITED'
 export const money = (value: number) => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-export const today = () => new Date().toISOString().slice(0, 10)
-export const addDays = (date: string, days: number) => new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10)
+// The shop's local day, as the server dates moves.
+export const today = () => localDate()
+export const addDays = (date: string, days: number) => new Date(Date.parse(`${date.slice(0, 10)}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
 
 // Amounts per currency, e.g. "1,250.00 AED · 80.00 USD".
 export function sumByCurrency(rows: Cheque[]) {
