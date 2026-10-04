@@ -139,7 +139,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
                     throw new SalesReturnException("The refund must come from an active treasury of the invoice's branch in the invoice currency.");
             }
 
-            var returnDate = (request.ReturnDate ?? DateTime.UtcNow).Date;
+            var returnDate = (request.ReturnDate ?? DateTime.Today).Date;
             if (returnDate < source.SaleDate.Date) throw new SalesReturnException("The return date cannot be before the invoice date.");
 
             var gross = returning.Sum(item => item.Quantity * item.Line.UnitPrice);
@@ -149,7 +149,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
 
             await using var sequence = db.CreateCommand();
             sequence.Transaction = tx;
-            sequence.CommandText = "SELECT ISNULL(MAX(TRY_CONVERT(int,RIGHT(ReturnNo,5))),0)+1 FROM dbo.SalesReturns WITH (UPDLOCK,HOLDLOCK) WHERE BranchId=@branch AND ReturnNo LIKE @prefix";
+            sequence.CommandText = "SELECT ISNULL(MAX(TRY_CONVERT(int,SUBSTRING(ReturnNo,LEN(@prefix),20))),0)+1 FROM dbo.SalesReturns WITH (UPDLOCK,HOLDLOCK) WHERE BranchId=@branch AND ReturnNo LIKE @prefix";
             Add(sequence, "@branch", source.BranchId, DbType.Int32);
             Add(sequence, "@prefix", $"SR-{source.BranchId}-%", DbType.String);
             var returnNo = $"SR-{source.BranchId}-{Convert.ToInt32(await sequence.ExecuteScalarAsync(ct)):D5}";

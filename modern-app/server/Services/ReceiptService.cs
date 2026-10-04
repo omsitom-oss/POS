@@ -17,11 +17,12 @@ public sealed class ReceiptService(DbConnectionFactory factory, TransactionServi
         var partnerAmount = request.PartnerAmount ?? request.Amount;
         var expectedTreasuryAmount = Math.Round(partnerAmount * request.ExchangeRate, 4, MidpointRounding.AwayFromZero);
         if (Math.Abs(expectedTreasuryAmount - request.Amount) > 0.01m) throw new ReceiptException("The treasury amount must equal the partner amount multiplied by the exchange rate.");
-        var receiptDate = (request.ReceiptDate ?? DateTime.UtcNow).Date;
+        var receiptDate = (request.ReceiptDate ?? DateTime.Today).Date;
         var receiptNumber = await NextReceiptNumberAsync(db, receiptDate, type, ct);
         var receiptNo = $"CSH-{(type == "RECEIPT" ? "IN" : "OUT")}-{receiptDate:ddMMyy}-{receiptNumber:D4}";
-        var partnerAccount = string.IsNullOrWhiteSpace(request.PartnerAccountId) ? $"PARTNER:{request.PartnerId}" : request.PartnerAccountId.Trim();
-        var treasuryAccount = string.IsNullOrWhiteSpace(request.TreasuryAccountId) ? $"TREASURY:{request.TreasuryId}" : request.TreasuryAccountId.Trim();
+        // The accounts follow from the partner and treasury; account codes sent by the client are ignored so a receipt cannot post to an arbitrary account.
+        var partnerAccount = $"PARTNER:{request.PartnerId}";
+        var treasuryAccount = $"TREASURY:{request.TreasuryId}";
         var receiptLine = new TransactionLineRequest(partnerAccount, request.PartnerId, null, type == "RECEIPT" ? 0 : request.Amount, type == "RECEIPT" ? request.Amount : 0, type == "RECEIPT" ? 0 : partnerAmount, type == "RECEIPT" ? partnerAmount : 0, partnerCurrencyId, request.ExchangeRate);
         var treasuryLine = new TransactionLineRequest(treasuryAccount, null, request.TreasuryId, type == "RECEIPT" ? request.Amount : 0, type == "RECEIPT" ? 0 : request.Amount, type == "RECEIPT" ? request.Amount : 0, type == "RECEIPT" ? 0 : request.Amount, details.CurrencyId, 1);
         var transaction = await transactions.SaveAsync(new TransactionWriteRequest(type, request.Reason, receiptNo, request.Description, details.CurrencyId, 1, [receiptLine, treasuryLine], request.BranchId, receiptDate, request.SavedBy), ct);
@@ -50,7 +51,6 @@ public sealed class ReceiptService(DbConnectionFactory factory, TransactionServi
         if (request.ExchangeRate <= 0) throw new ReceiptException("Exchange rate must be greater than zero.");
         if (request.PartnerCurrencyId is 0 or < 0) throw new ReceiptException("Choose the partner account currency.");
         if (request.PartnerAmount is 0 or < 0) throw new ReceiptException("Partner amount must be greater than zero.");
-        if (request.PartnerAccountId?.Trim().Length > 50 || request.TreasuryAccountId?.Trim().Length > 50) throw new ReceiptException("Account IDs must be 50 characters or fewer.");
     }
 
     private static async Task<(int CurrencyId, bool IsActive)> ReadReferencesAsync(DbConnection db, ReceiptWriteRequest request, CancellationToken ct)

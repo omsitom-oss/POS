@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatCurrency, formatDate, formatNumber } from './formatters'
+import { formatCurrency, formatDate, formatNumber, localDate } from './formatters'
 
 describe('formatters', () => {
   it('formats AED currency with two decimals in English', () => {
@@ -19,5 +19,10 @@ describe('formatters', () => {
 
   it('formats an ISO date string by calendar day regardless of time zone', () => {
     expect(formatDate('2026-03-05T23:59:59Z', 'en')).toMatch(/05.*Mar.*2026|Mar.*05.*2026/)
+  })
+
+  it('gives the local calendar date, not the UTC one', () => {
+    expect(localDate(new Date(2026, 9, 4, 0, 30))).toBe('2026-10-04')
+    expect(localDate(new Date(2026, 0, 1, 23, 59))).toBe('2026-01-01')
   })
 })

@@ -20,6 +20,7 @@ public static class InventoryEndpoints
         {
             try { return Results.Created("/api/inventory/requests", await service.CreateDisposalAsync(request with { BranchId = user.ForWrite(request.BranchId), RequestedBy = user.GetUserId() }, ct)); }
             catch (InventoryException ex) { return Results.Problem(ex.Message, statusCode: ex.StatusCode); }
+            catch (TransactionException ex) { return Results.Problem(ex.Message, statusCode: ex.StatusCode); }
         }).RequirePermission(PermissionCodes.InventoryDispose);
         group.MapGet("/requests", async (int? branchId, string? status, ClaimsPrincipal user, InventoryService service, CancellationToken ct) => Results.Ok(await service.GetRequestsAsync(user.ForSingleBranchRead(branchId), status, ct))).RequirePermission(PermissionCodes.InventoryView);
         // The reviewer is the signed-in user; the old reviewerId query parameter is ignored.
@@ -29,6 +30,7 @@ public static class InventoryEndpoints
             if (branch is null || !user.CanAccessBranch(branch.Value)) return Results.NotFound();
             try { var result = await service.ApproveDisposalAsync(requestId, user.GetUserId(), ct); return result is null ? Results.NotFound() : Results.Ok(result); }
             catch (InventoryException ex) { return Results.Problem(ex.Message, statusCode: ex.StatusCode); }
+            catch (TransactionException ex) { return Results.Problem(ex.Message, statusCode: ex.StatusCode); }
         }).RequirePermission(PermissionCodes.InventoryApprove);
         return endpoints;
     }
