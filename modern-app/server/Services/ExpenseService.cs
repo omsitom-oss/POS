@@ -17,7 +17,7 @@ public sealed class ExpenseService(DbConnectionFactory factory, TransactionServi
         var expenseNo = $"EXP-{date:ddMMyy}-{number:D4}";
         var expenseLine = new TransactionLineRequest(refs.AccountCode, null, null, request.Amount, 0, request.Amount, 0, refs.CurrencyId, 1);
         var treasuryLine = new TransactionLineRequest($"TREASURY:{request.TreasuryId}", null, request.TreasuryId, 0, request.Amount, 0, request.Amount, refs.CurrencyId, 1);
-        var transaction = await transactions.SaveAsync(new TransactionWriteRequest("EXPENSE", refs.AccountCode, expenseNo, request.Description, refs.CurrencyId, 1, [expenseLine, treasuryLine], request.BranchId, date, request.SavedBy), ct);
+        var transaction = await transactions.SaveAsync(new TransactionWriteRequest("EXPENSE", refs.AccountCode, expenseNo, request.Description, refs.CurrencyId, 1, [expenseLine, treasuryLine], request.BranchId, date, request.SavedBy, PayeeName: request.PayeeName), ct);
         return new ExpenseWriteResult(expenseNo, request.TreasuryId, refs.AccountCode, request.Amount, transaction);
     }
 
@@ -25,10 +25,10 @@ public sealed class ExpenseService(DbConnectionFactory factory, TransactionServi
     {
         await using var db = await OpenAsync(ct);
         await using var command = db.CreateCommand();
-        command.CommandText = "WITH grouped AS (SELECT MoveNo,MAX(RefNo) AS ExpenseNo,TransactionDate,MAX(CASE WHEN TreasuryId IS NULL THEN AccountId END) AS ExpenseAccountId,MAX(TreasuryId) AS TreasuryId,SUM(CASE WHEN TreasuryId IS NOT NULL THEN ForeignCredit ELSE 0 END) AS Amount,MAX(Description) AS Description,MAX(CurrencyId) AS CurrencyId FROM dbo.Transactions WHERE TransactionType='EXPENSE' AND (@branch IS NULL OR BranchId=@branch) AND (@from IS NULL OR TransactionDate>=@from) AND (@to IS NULL OR TransactionDate<=@to) GROUP BY MoveNo,TransactionDate) SELECT g.MoveNo,g.ExpenseNo,g.TransactionDate,g.ExpenseAccountId,a.NameEn,a.NameAr,g.TreasuryId,t.NameEn,g.CurrencyId,c.CurrencyCode,c.Symbol,g.Amount,g.Description FROM grouped g JOIN dbo.Accounts a ON a.AccountCode=g.ExpenseAccountId JOIN dbo.Treasuries t ON t.TreasuryId=g.TreasuryId JOIN dbo.Currencies c ON c.CurrencyId=g.CurrencyId ORDER BY g.TransactionDate DESC,g.MoveNo DESC";
+        command.CommandText = "WITH grouped AS (SELECT MoveNo,MAX(RefNo) AS ExpenseNo,TransactionDate,MAX(CASE WHEN TreasuryId IS NULL THEN AccountId END) AS ExpenseAccountId,MAX(TreasuryId) AS TreasuryId,SUM(CASE WHEN TreasuryId IS NOT NULL THEN ForeignCredit ELSE 0 END) AS Amount,MAX(Description) AS Description,MAX(PayeeName) AS PayeeName,MAX(CASE WHEN TreasuryId IS NOT NULL THEN CurrencyId END) AS CurrencyId FROM dbo.Transactions WHERE TransactionType='EXPENSE' AND (@branch IS NULL OR BranchId=@branch) AND (@from IS NULL OR TransactionDate>=@from) AND (@to IS NULL OR TransactionDate<=@to) GROUP BY MoveNo,TransactionDate) SELECT g.MoveNo,g.ExpenseNo,g.TransactionDate,g.ExpenseAccountId,a.NameEn,a.NameAr,g.TreasuryId,t.NameEn,g.CurrencyId,c.CurrencyCode,c.Symbol,g.Amount,g.Description,g.PayeeName FROM grouped g JOIN dbo.Accounts a ON a.AccountCode=g.ExpenseAccountId JOIN dbo.Treasuries t ON t.TreasuryId=g.TreasuryId JOIN dbo.Currencies c ON c.CurrencyId=g.CurrencyId ORDER BY g.TransactionDate DESC,g.MoveNo DESC";
         Add(command, "@branch", branchId, DbType.Int32); Add(command, "@from", from?.Date, DbType.Date); Add(command, "@to", to?.Date, DbType.Date);
         var rows = new List<ExpenseListItem>(); await using var reader = await command.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) rows.Add(new ExpenseListItem(reader.GetInt32(0), reader.GetString(1), reader.GetDateTime(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetInt32(6), reader.GetString(7), reader.GetInt32(8), reader.GetString(9), reader.GetString(10), reader.GetDecimal(11), reader.IsDBNull(12) ? null : reader.GetString(12)));
+        while (await reader.ReadAsync(ct)) rows.Add(new ExpenseListItem(reader.GetInt32(0), reader.GetString(1), reader.GetDateTime(2), reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetInt32(6), reader.GetString(7), reader.GetInt32(8), reader.GetString(9), reader.GetString(10), reader.GetDecimal(11), reader.IsDBNull(12) ? null : reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13)));
         return rows;
     }
 
@@ -38,6 +38,7 @@ public sealed class ExpenseService(DbConnectionFactory factory, TransactionServi
         if (request.ExpenseAccountId.Trim().Length > 50) throw new ExpenseException("Expense account is too long.");
         if (request.TreasuryId <= 0) throw new ExpenseException("Choose a treasury.");
         if (request.Amount <= 0) throw new ExpenseException("Amount must be greater than zero.");
+        if (request.PayeeName?.Trim().Length > 150) throw new ExpenseException("The payee name is too long.");
     }
 
     private static async Task<(string AccountCode, int CurrencyId)> ReadReferencesAsync(DbConnection db, ExpenseWriteRequest request, CancellationToken ct)
