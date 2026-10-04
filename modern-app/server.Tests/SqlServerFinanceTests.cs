@@ -167,6 +167,99 @@ public sealed class SqlServerFinanceTests(SqlServerApiFixture fixture) : IClassF
         Assert.Equal(17, await StockAsync(item));
     }
 
+    [Fact]
+    public async Task A_till_cannot_pay_out_more_than_it_holds()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        await fixture.Database.ExecuteAsync($"""
+            IF NOT EXISTS (SELECT 1 FROM dbo.Treasuries WHERE TreasuryCode=N'T-EMPTY')
+                INSERT dbo.Treasuries(TreasuryCode,NameAr,NameEn,CurrencyId,BranchId) VALUES(N'T-EMPTY',N'خزنة فارغة',N'Empty till',{refs.Currency},{fixture.BranchA});
+            """, "empty till", Ct);
+        var till = await fixture.Database.CountAsync("SELECT TreasuryId FROM dbo.Treasuries WHERE TreasuryCode=N'T-EMPTY'", Ct);
+        Task<HttpResponseMessage> Receipt(string type, decimal amount) =>
+            Admin.PostAsJsonAsync("/api/receipts", new { type, partnerId = refs.Supplier, treasuryId = till, amount, exchangeRate = 1m, branchId = fixture.BranchA }, Ct);
+
+        var overdraw = await Receipt("PAYMENT", 5m);
+        Assert.Equal(HttpStatusCode.BadRequest, overdraw.StatusCode);
+        Assert.Contains("Empty till has only 0 P", await overdraw.Content.ReadAsStringAsync(Ct));
+
+        Assert.Equal(HttpStatusCode.Created, (await Receipt("RECEIPT", 30m)).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await Receipt("PAYMENT", 30m)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Receipt("PAYMENT", 0.01m)).StatusCode);
+        Assert.Equal(0m, await fixture.Database.ScalarAsync<decimal>($"SELECT SUM(ForeignDebit-ForeignCredit) FROM dbo.Transactions WHERE TreasuryId={till}", Ct));
+    }
+
+    [Fact]
+    public async Task Journal_debits_and_credits_are_kept_in_the_primary_currency()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        await fixture.Database.ExecuteAsync($"""
+            IF NOT EXISTS (SELECT 1 FROM dbo.Currencies WHERE CurrencyCode=N'USX')
+                INSERT dbo.Currencies(CurrencyCode,CurrencyNameEn,CurrencyNameAr,Symbol,IsPrimary) VALUES(N'USX',N'Dollar',N'دولار',N'$',0);
+            DECLARE @usd int = (SELECT CurrencyId FROM dbo.Currencies WHERE CurrencyCode=N'USX');
+            INSERT dbo.CurrencyRateHistory(CurrencyId,BaseCurrencyId,Rate) VALUES(@usd,{refs.Currency},50);
+            IF NOT EXISTS (SELECT 1 FROM dbo.Treasuries WHERE TreasuryCode=N'T-USD')
+                INSERT dbo.Treasuries(TreasuryCode,NameAr,NameEn,CurrencyId,BranchId) VALUES(N'T-USD',N'خزنة دولار',N'Dollar till',@usd,{fixture.BranchA});
+            """, "dollar seed", Ct);
+        var usd = await fixture.Database.CountAsync("SELECT CurrencyId FROM dbo.Currencies WHERE CurrencyCode=N'USX'", Ct);
+        var till = await fixture.Database.CountAsync("SELECT TreasuryId FROM dbo.Treasuries WHERE TreasuryCode=N'T-USD'", Ct);
+
+        // A dollar receipt: the till and the supplier keep dollars, the journal's base columns hold primary currency at the stored rate.
+        var receipt = await Admin.PostAsJsonAsync("/api/receipts", new { type = "RECEIPT", partnerId = refs.Supplier, treasuryId = till, amount = 10m, exchangeRate = 1m, branchId = fixture.BranchA }, Ct);
+        Assert.Equal(HttpStatusCode.Created, receipt.StatusCode);
+        var receiptNo = (await receipt.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("receiptNo").GetString();
+        Assert.Equal(500m, await fixture.Database.ScalarAsync<decimal>($"SELECT Debit FROM dbo.Transactions WHERE RefNo=N'{receiptNo}' AND TreasuryId={till}", Ct));
+        Assert.Equal(10m, await fixture.Database.ScalarAsync<decimal>($"SELECT ForeignDebit FROM dbo.Transactions WHERE RefNo=N'{receiptNo}' AND TreasuryId={till}", Ct));
+        var listed = (await Admin.GetFromJsonAsync<JsonElement[]>("/api/receipts", Ct))!.Single(row => row.GetProperty("receiptNo").GetString() == receiptNo);
+        Assert.Equal(10m, listed.GetProperty("amount").GetDecimal());
+
+        // A dollar purchase uses its own invoice rate, not the stored one.
+        var item = await NewItemAsync("FN-USD");
+        var purchase = await Admin.PostAsJsonAsync("/api/purchases", new { supplierPartnerId = refs.Supplier, currencyId = usd, exchangeRateToBase = 48m, status = "POSTED", lines = new[] { new { itemId = item, quantity = 2m, unitPrice = 3m } } }, Ct);
+        Assert.Equal(HttpStatusCode.Created, purchase.StatusCode);
+        var invoice = (await purchase.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("invoiceNo").GetString();
+        Assert.Equal(288m, await fixture.Database.ScalarAsync<decimal>($"SELECT Debit FROM dbo.Transactions WHERE RefNo=N'{invoice}' AND AccountId=N'1300'", Ct));
+        Assert.Equal(6m, await fixture.Database.ScalarAsync<decimal>($"SELECT ForeignCredit FROM dbo.Transactions WHERE RefNo=N'{invoice}' AND AccountId=N'2100'", Ct));
+
+        // Without a stored rate a foreign-currency payment is refused instead of being booked at 1:1.
+        await fixture.Database.ExecuteAsync($"DELETE FROM dbo.CurrencyRateHistory WHERE CurrencyId={usd}", "drop rate", Ct);
+        var noRate = await Admin.PostAsJsonAsync("/api/receipts", new { type = "RECEIPT", partnerId = refs.Supplier, treasuryId = till, amount = 1m, exchangeRate = 1m, branchId = fixture.BranchA }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, noRate.StatusCode);
+        Assert.Contains("Set an exchange rate from USX", await noRate.Content.ReadAsStringAsync(Ct));
+    }
+
+    [Fact]
+    public async Task A_rate_typed_against_the_primary_currency_wins_over_the_stored_rate()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        await fixture.Database.ExecuteAsync($"""
+            IF NOT EXISTS (SELECT 1 FROM dbo.Currencies WHERE CurrencyCode=N'EUX')
+                INSERT dbo.Currencies(CurrencyCode,CurrencyNameEn,CurrencyNameAr,Symbol,IsPrimary) VALUES(N'EUX',N'Euro',N'يورو',N'E',0);
+            DECLARE @eur int = (SELECT CurrencyId FROM dbo.Currencies WHERE CurrencyCode=N'EUX');
+            INSERT dbo.CurrencyRateHistory(CurrencyId,BaseCurrencyId,Rate) VALUES(@eur,{refs.Currency},40);
+            IF NOT EXISTS (SELECT 1 FROM dbo.Treasuries WHERE TreasuryCode=N'T-EUX')
+                INSERT dbo.Treasuries(TreasuryCode,NameAr,NameEn,CurrencyId,BranchId) VALUES(N'T-EUX',N'خزنة يورو',N'Euro till',@eur,{fixture.BranchA});
+            """, "euro seed", Ct);
+        var till = await fixture.Database.CountAsync("SELECT TreasuryId FROM dbo.Treasuries WHERE TreasuryCode=N'T-EUX'", Ct);
+
+        // The supplier hands over 10 euros against 420 owed in the primary currency: the till line is worth 420, not 10 x 40.
+        var receipt = await Admin.PostAsJsonAsync("/api/receipts", new { type = "RECEIPT", partnerId = refs.Supplier, treasuryId = till, partnerCurrencyId = refs.Currency, partnerAmount = 420m, amount = 10m, exchangeRate = 10m / 420m, branchId = fixture.BranchA }, Ct);
+        Assert.Equal(HttpStatusCode.Created, receipt.StatusCode);
+        var receiptNo = (await receipt.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("receiptNo").GetString();
+        Assert.Equal(420m, await fixture.Database.ScalarAsync<decimal>($"SELECT Debit FROM dbo.Transactions WHERE RefNo=N'{receiptNo}' AND TreasuryId={till}", Ct));
+        Assert.Equal(420m, await fixture.Database.ScalarAsync<decimal>($"SELECT Credit FROM dbo.Transactions WHERE RefNo=N'{receiptNo}' AND PartnerId={refs.Supplier}", Ct));
+
+        // Moving the 10 euros into the primary till for 430 books 430 on both sides, not 10 x 40.
+        var transfer = await Admin.PostAsJsonAsync("/api/treasury-transfers", new { sourceTreasuryId = till, destinationTreasuryId = refs.Treasury, sourceAmount = 10m, destinationAmount = 430m, exchangeRate = 10m / 430m, branchId = fixture.BranchA }, Ct);
+        Assert.Equal(HttpStatusCode.Created, transfer.StatusCode);
+        var moveNo = (await transfer.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("moveNo").GetInt32();
+        Assert.Equal(430m, await fixture.Database.ScalarAsync<decimal>($"SELECT Credit FROM dbo.Transactions WHERE MoveNo={moveNo} AND TreasuryId={till}", Ct));
+        Assert.Equal(430m, await fixture.Database.ScalarAsync<decimal>($"SELECT Debit FROM dbo.Transactions WHERE MoveNo={moveNo} AND TreasuryId={refs.Treasury}", Ct));
+    }
+
     private sealed record Refs(int Currency, int Treasury, int Supplier);
 
     private async Task<Refs> SeedAsync()
