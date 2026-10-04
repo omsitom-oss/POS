@@ -77,6 +77,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
         var transactionDate = (request.TransactionDate ?? DateTime.Today).Date;
         var branchId = request.BranchId ?? await ReadDefaultBranchAsync(db, tx, ct);
         await ValidateReferencesAsync(db, tx, request, branchId, lines, ct);
+        lines = await ToPrimaryCurrencyAsync(db, tx, request, transactionDate, lines, ct);
         var moveNo = await NextMoveNoAsync(db, tx, ct);
         var ids = new List<long>(lines.Count);
 
@@ -105,6 +106,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
             ids.Add(Convert.ToInt64(await insert.ExecuteScalarAsync(ct)));
         }
 
+        await EnsureTreasuriesStayCoveredAsync(db, tx, lines, ct);
         return new TransactionWriteResult(moveNo, transactionDate, request.CurrencyId, request.ExchangeRate, ids);
     }
 
@@ -207,6 +209,46 @@ public sealed class TransactionService(DbConnectionFactory factory)
             if (!reader.GetBoolean(1)) throw new TransactionException("An inactive treasury cannot be used in a transaction.");
             if (reader.GetInt32(0) != (line.CurrencyId ?? request.CurrencyId)) throw new TransactionException("The transaction line currency must match the treasury currency.");
         }
+    }
+
+    // A till or bank account may not be paid out below zero. NextMoveNoAsync holds an exclusive lock on the journal
+    // until the caller commits, so no other payment can slip in between this check and the commit.
+    private static async Task EnsureTreasuriesStayCoveredAsync(DbConnection db, DbTransaction tx, IReadOnlyList<TransactionLineRequest> lines, CancellationToken ct)
+    {
+        var outflows = lines.Where(line => line.TreasuryId.HasValue).GroupBy(line => line.TreasuryId!.Value)
+            .Select(group => (TreasuryId: group.Key, Net: group.Sum(line => line.ForeignDebit - line.ForeignCredit))).Where(item => item.Net < 0);
+        foreach (var (treasuryId, net) in outflows)
+        {
+            await using var command = db.CreateCommand(); command.Transaction = tx;
+            command.CommandText = "SELECT t.NameEn,c.Symbol,COALESCE((SELECT SUM(x.ForeignDebit-x.ForeignCredit) FROM dbo.Transactions x WHERE x.TreasuryId=t.TreasuryId),0) FROM dbo.Treasuries t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.TreasuryId=@id";
+            Add(command, "@id", treasuryId, DbType.Int32);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) continue;
+            var balance = reader.GetDecimal(2);
+            if (balance < 0) throw new TransactionException($"{reader.GetString(0)} has only {balance - net:0.##} {reader.GetString(1)}, which is not enough to pay out {-net:0.##} {reader.GetString(1)}.");
+        }
+    }
+
+    // Debit and Credit are always kept in the primary currency, so account balances and reports add like with like.
+    // Callers give them in the document currency (request.CurrencyId); the foreign columns keep each line's own currency.
+    private static async Task<IReadOnlyList<TransactionLineRequest>> ToPrimaryCurrencyAsync(DbConnection db, DbTransaction tx, TransactionWriteRequest request, DateTime date, IReadOnlyList<TransactionLineRequest> lines, CancellationToken ct)
+    {
+        await using var command = db.CreateCommand(); command.Transaction = tx;
+        command.CommandText = "SELECT TOP 1 p.CurrencyId,(SELECT TOP 1 h.Rate FROM dbo.CurrencyRateHistory h WHERE h.CurrencyId=@currency AND h.BaseCurrencyId=p.CurrencyId AND h.RecordedAt<DATEADD(day,1,CAST(@date AS datetime2)) ORDER BY h.RecordedAt DESC,h.CurrencyRateId DESC),c.CurrencyCode,p.CurrencyCode FROM dbo.Currencies p CROSS JOIN dbo.Currencies c WHERE p.IsPrimary=1 AND p.IsActive=1 AND c.CurrencyId=@currency";
+        Add(command, "@currency", request.CurrencyId, DbType.Int32); Add(command, "@date", date, DbType.Date);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct) || reader.GetInt32(0) == request.CurrencyId) return lines; // No primary currency yet, or the document is already in it.
+        var rate = request.BaseRate ?? (reader.IsDBNull(1) ? throw new TransactionException($"Set an exchange rate from {reader.GetString(2)} to {reader.GetString(3)} before posting.") : reader.GetDecimal(1));
+        if (rate <= 0) throw new TransactionException("The exchange rate to the primary currency must be greater than zero.");
+        var converted = lines.Select(line => line with { Debit = Math.Round(line.Debit * rate, 4, MidpointRounding.AwayFromZero), Credit = Math.Round(line.Credit * rate, 4, MidpointRounding.AwayFromZero) }).ToList();
+        // Rounding each line can leave a few ten-thousandths over; the largest line on the heavier side absorbs it.
+        var difference = converted.Sum(line => line.Debit) - converted.Sum(line => line.Credit);
+        if (difference != 0)
+        {
+            var index = difference > 0 ? converted.FindIndex(line => line.Debit == converted.Max(other => other.Debit)) : converted.FindIndex(line => line.Credit == converted.Max(other => other.Credit));
+            converted[index] = difference > 0 ? converted[index] with { Debit = converted[index].Debit - difference } : converted[index] with { Credit = converted[index].Credit + difference };
+        }
+        return converted;
     }
 
     private static async Task<int> NextMoveNoAsync(DbConnection db, DbTransaction tx, CancellationToken ct)

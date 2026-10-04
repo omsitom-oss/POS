@@ -53,7 +53,7 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
             await using(var received=db.CreateCommand()){received.Transaction=tx;received.CommandText="UPDATE dbo.Purchases SET Status=N'POSTED',PostedAt=SYSUTCDATETIME(),ReceivedAt=SYSUTCDATETIME(),LandedCostBase=@landed WHERE PurchaseId=@id AND Status=N'DRAFT'";Add(received,"@landed",landedBase,DbType.Decimal);Add(received,"@id",id,DbType.Int64);await received.ExecuteNonQueryAsync(ct);}
             if (purchaseType != "IMPORT")
             {
-                await transactions.PostAsync(db, tx, new TransactionWriteRequest("PURCHASE", "PURCHASE", invoice, description, currency, 1, [new("1300", null, null, total, 0, total, 0, currency, 1), new("2100", supplier, null, 0, total, 0, total, currency, 1)], branch, null, savedBy), ct);
+                await transactions.PostAsync(db, tx, new TransactionWriteRequest("PURCHASE", "PURCHASE", invoice, description, currency, 1, [new("1300", null, null, total, 0, total, 0, currency, 1), new("2100", supplier, null, 0, total, 0, total, currency, 1)], branch, null, savedBy, exchangeRate), ct);
             }
             await tx.CommitAsync(ct);
         }
@@ -141,7 +141,7 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
                 {
                     new TransactionLineRequest("1300", null, null, total, 0, total, 0, currencyId, 1),
                     new TransactionLineRequest("2100", request.SupplierPartnerId, null, 0, total, 0, total, currencyId, 1)
-                }, branch, request.PurchaseDate, request.SavedBy), ct);
+                }, branch, request.PurchaseDate, request.SavedBy, request.ExchangeRateToBase), ct);
             }
             // The stock and the journal commit together, so a failed journal leaves no received goods behind.
             await tx.CommitAsync(ct);
