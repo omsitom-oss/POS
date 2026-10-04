@@ -265,7 +265,12 @@ export function ItemsPage({ locale }: { locale: Locale }) {
           columns={columns}
           rows={rows}
           rowKey={(row) => row.itemId}
-          dir={ar ? "rtl" : "ltr"}
+          locale={ar ? "ar" : "en"}
+          density="compact"
+          pageSize={15}
+          totals={(list) => [
+            { key: "count", label: ar ? "الأصناف" : "Items", value: String(list.length) },
+          ]}
           searchPlaceholder={
             ar ? "ابحث بالرمز أو الاسم" : "Search code or name"
           }
@@ -287,7 +292,6 @@ export function ItemsPage({ locale }: { locale: Locale }) {
               <Icon name="edit" size={18} />
             </Button>
           )}
-          pageSize={10}
           labels={
             ar
               ? {
