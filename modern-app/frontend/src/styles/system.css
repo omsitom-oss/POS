@@ -585,6 +585,9 @@ textarea.text-input { height: auto; padding-block: 10px; }
 /* ---------- Feature pages ---------- */
 .settings-toolbar-controls { display: flex; align-items: center; justify-content: end; gap: 12px; }
 .report-metric { display: block; margin-top: 12px; color: var(--primary); font-size: 25px; line-height: 1.2; }
+.metric-card { display: flex; flex-direction: column; gap: 4px; padding: 16px 17px; }
+.metric-card .report-metric { margin-top: 6px; }
+.grid-full { grid-column: 1 / -1; }
 .sales-base-currency { display:inline-flex; align-items:center; gap:7px; }
 .sales-base-currency strong { color:var(--primary); border:1px solid color-mix(in srgb,var(--primary) 65%,var(--border)); border-radius:7px; padding:3px 9px; font-size:13px; }
 .sales-editor-card { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,360px); gap:16px; align-items:stretch; padding:0; background:transparent; border:0; box-shadow:none; }
