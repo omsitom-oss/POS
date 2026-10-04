@@ -109,7 +109,7 @@ export function PurchaseEditor({ ar, editor, suppliers, items, currencySymbol, e
             <div className="purchase-lines-head">
               <h3>{ar ? "العناصر" : "Items"}</h3>
               <Button variant="primary" size="small" onClick={openItemModal}>
-                ＋ {ar ? "إضافة صنف" : "Add item"}
+                <Icon name="plus" size={18} />{ar ? "إضافة صنف" : "Add item"}
               </Button>
             </div>
             <div className="purchase-lines-table">

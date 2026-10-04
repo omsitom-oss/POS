@@ -1,11 +1,13 @@
 import { useCallback, useState } from "react";
 import {
   Button,
+  EmptyState,
   ErrorState,
   IconButton,
   LoadingState,
   StatusBadge,
   TableFooter,
+  Money,
 } from "../../components/shared";
 import { useLoadEffect } from "../../components/useLoadEffect";
 import { usePagination } from "../../components/usePagination";
@@ -143,10 +145,10 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
         actions={
           <div className="page-actions">
             <Button variant="secondary" onClick={() => onImport?.()}>
-              ＋ {ar ? "استيراد بضاعة" : "Import goods"}
+              <Icon name="plus" size={18} />{ar ? "استيراد بضاعة" : "Import goods"}
             </Button>
             <Button variant="primary" onClick={() => setEditing(true)}>
-              ＋ {ar ? "فاتورة جديدة" : "New invoice"}
+              <Icon name="plus" size={18} />{ar ? "فاتورة جديدة" : "New invoice"}
             </Button>
           </div>
         }
@@ -170,6 +172,8 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
       </div>
       {loading ? (
         <LoadingState />
+      ) : !visibleRows.length ? (
+        <EmptyState title={ar ? "لا توجد فواتير هنا بعد." : "No invoices here yet."} detail={ar ? "أنشئ فاتورة شراء لتظهر في هذه القائمة." : "Create a purchase invoice and it will appear in this list."} />
       ) : (
         <div className="currency-table-wrap">
           <table className="currency-table">
@@ -179,7 +183,7 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
                 <th>{ar ? "التاريخ" : "Date"}</th>
                 <th>{ar ? "المورد" : "Supplier"}</th>
                 <th>{ar ? "الحالة" : "Status"}</th>
-                <th>{ar ? "الإجمالي" : "Total"}</th>
+                <th className="num-cell">{ar ? "الإجمالي" : "Total"}</th>
                 <th>{ar ? "العناصر" : "Items"}</th>
                 <th>{ar ? "الإجراءات" : "Actions"}</th>
               </tr>
@@ -205,11 +209,8 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
                           : "Draft"}
                     </StatusBadge>
                   </td>
-                  <td>
-                    {x.total.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                    })}{" "}
-                    {x.currencySymbol}
+                  <td className="num-cell">
+                    <Money value={x.total} symbol={x.currencySymbol} />
                   </td>
                   <td>{x.lineCount}</td>
                   <td>

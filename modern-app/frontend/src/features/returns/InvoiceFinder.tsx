@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react'
-import { Button, DateInput, EmptyState, ErrorState, FormField, LoadingState, SearchInput, TableFooter } from '../../components/shared'
+import { Button, DateInput, EmptyState, ErrorState, FormField, LoadingState, SearchInput, TableFooter, Money } from '../../components/shared'
 import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import type { Locale } from '../../layouts/AppLayout'
-import { money, type ReturnableInvoice } from './returnModel'
+import { type ReturnableInvoice } from './returnModel'
 
 // Lists invoices that still have something to return, filtered by invoice number, partner or item and by date.
 export function InvoiceFinder({ locale, endpoint, partnerLabel, onSelect }: { locale: Locale; endpoint: string; partnerLabel: string; onSelect: (invoice: ReturnableInvoice) => void }) {
@@ -40,13 +40,13 @@ export function InvoiceFinder({ locale, endpoint, partnerLabel, onSelect }: { lo
     </form>
     {error && <ErrorState title={ar ? 'تعذر تنفيذ العملية' : 'Request failed'} detail={error} />}
     {loading ? <LoadingState /> : rows.length === 0 ? <EmptyState title={ar ? 'لا توجد فواتير قابلة للإرجاع' : 'No invoices to return'} detail={ar ? 'تظهر هنا الفواتير المرحّلة التي لم تُرجع بالكامل.' : 'Posted invoices that are not fully returned appear here.'} /> : <div className="receipts-table-wrap"><table className="receipts-table">
-      <thead><tr><th>{ar ? 'رقم الفاتورة' : 'Invoice no.'}</th><th>{ar ? 'التاريخ' : 'Date'}</th><th>{partnerLabel}</th><th>{ar ? 'الإجمالي' : 'Total'}</th><th>{ar ? 'المُرجع' : 'Returned'}</th><th aria-label={ar ? 'إجراءات' : 'Actions'} /></tr></thead>
+      <thead><tr><th>{ar ? 'رقم الفاتورة' : 'Invoice no.'}</th><th>{ar ? 'التاريخ' : 'Date'}</th><th>{partnerLabel}</th><th className="num-cell">{ar ? 'الإجمالي' : 'Total'}</th><th className="num-cell">{ar ? 'المُرجع' : 'Returned'}</th><th aria-label={ar ? 'إجراءات' : 'Actions'} /></tr></thead>
       <tbody>{page.rows.map(invoice => <tr key={invoice.invoiceId}>
         <td><code>{invoice.invoiceNo}</code></td>
         <td>{invoice.invoiceDate.slice(0, 10)}</td>
         <td>{invoice.partnerName ?? <span className="muted-cell">{ar ? 'بيع مباشر' : 'Walk-in'}</span>}</td>
-        <td className="numeric-cell">{money(invoice.total)} <small>{invoice.currencySymbol}</small></td>
-        <td className="numeric-cell">{money(invoice.returnedTotal)} <small>{invoice.currencySymbol}</small></td>
+        <td className="numeric-cell"><Money value={invoice.total} symbol={invoice.currencySymbol} /></td>
+        <td className="numeric-cell"><Money value={invoice.returnedTotal} symbol={invoice.currencySymbol} /></td>
         <td><Button size="small" variant="outline" onClick={() => onSelect(invoice)}>{ar ? 'إرجاع من هذه الفاتورة' : 'Return from this invoice'}</Button></td>
       </tr>)}</tbody>
     </table><TableFooter total={rows.length} locale={locale} pager={page.pager} /></div>}

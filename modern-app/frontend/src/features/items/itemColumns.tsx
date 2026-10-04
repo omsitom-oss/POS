@@ -1,5 +1,5 @@
 import type { TableColumn } from "../../components/DataTable";
-import { StatusBadge } from "../../components/shared";
+import { Money, StatusBadge } from "../../components/shared";
 import type { Item } from "./itemModel";
 
 export function itemColumns(ar: boolean, primarySymbol: string): TableColumn<Item>[] {
@@ -42,22 +42,19 @@ export function itemColumns(ar: boolean, primarySymbol: string): TableColumn<Ite
   {
     key: "price",
     title: ar ? "السعر" : "Price",
+    align: "end",
     value: (row) => row.sellPrice,
     render: (row) => (
-      <span dir="ltr">
-        {row.sellPrice.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
-      </span>
+      <Money value={row.sellPrice} symbol={primarySymbol} />
     ),
     sortable: true,
   },
   {
     key: "lastPurchasePrice",
     title: ar ? "آخر سعر شراء" : "Last purchase price",
+    align: "end",
     value: (row) => row.lastPurchasePrice ?? 0,
-    render: (row) => <span dir="ltr">{row.lastPurchasePrice == null ? "—" : `${row.lastPurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${primarySymbol}`}</span>,
+    render: (row) => row.lastPurchasePrice == null ? "—" : <Money value={row.lastPurchasePrice} symbol={primarySymbol} />,
     sortable: true,
   },
   {

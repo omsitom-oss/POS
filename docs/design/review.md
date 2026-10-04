@@ -50,3 +50,11 @@ The second audit (artifact "Elite POS design audit") found the layout, not the c
 - **Language** is remembered between visits (`elite-pos-locale`).
 
 Next steps: one list pattern and `formatMoney` everywhere (step 2), then the full-screen till (step 3).
+
+## Step 2: lists and money
+
+- **Money** goes through `formatMoney` / `<Money>` (`app/formatters.ts`, `components/shared.tsx`): Latin digits, two decimals, symbol after the amount, isolated so it reads the same in Arabic. Inventory no longer hard-codes `SDG` or drops decimals; Items shows the currency on the price; Reports shows money with the currency and counts as whole numbers.
+- **Hand-built tables** (`currency-table`, `receipts-table`, `accounts-table`, `item-price-history-table`) share one rule set with `DataTable`: same header, row height, hover, and `num-cell` end alignment for numbers in both directions. Fixed layout is gone, so long item names no longer run into the next column. Wide tables scroll inside their frame.
+- Purchases shows an empty state instead of a bare header; Receipts shows "—" for the rate on same-currency rows and wraps descriptions; the sales list shows "Invoice saved" as a success message, not an error.
+- Remaining text glyphs (`＋`, `⎙`, `×`) are icons; a `print` icon was added.
+- Login asks for "Username, email or phone" (the server accepts all three) and its language toggle reads AR/EN like the header.

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Button, EmptyState, ErrorState, FormField, LoadingState, Modal, SearchInput, StatusBadge, TableFooter, Tabs } from '../../components/shared'
+import { Button, EmptyState, ErrorState, FormField, LoadingState, Modal, SearchInput, StatusBadge, TableFooter, Tabs, Money } from '../../components/shared'
 import { Icon } from '../../components/icons'
 import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
@@ -76,7 +76,7 @@ export function PurchaseReturnsPage({ locale, canApprove }: { locale: Locale; ca
 
   return <div className="settings-page" dir={ar ? 'rtl' : 'ltr'}>
     <PageHeader eyebrow={ar ? 'المشتريات' : 'PURCHASES'} title={ar ? 'مرتجعات المشتريات' : 'Purchase returns'} description={ar ? 'إرجاع أصناف من فاتورة شراء مرحّلة إلى المورد، مع الموافقة عند تفعيلها.' : 'Return items from a posted purchase invoice to the supplier, with approval when it is switched on.'}
-      actions={<Button variant="primary" onClick={() => { setNotice(''); setError(''); setCreating(true) }}>＋ {ar ? 'مرتجع جديد' : 'New return'}</Button>} />
+      actions={<Button variant="primary" onClick={() => { setNotice(''); setError(''); setCreating(true) }}><Icon name="plus" size={18} />{ar ? 'مرتجع جديد' : 'New return'}</Button>} />
     {notice && <div className="form-success" role="status">{notice}</div>}
     <Tabs value={filter} onChange={id => { setFilter(id as 'ALL' | Status); page.resetPage() }} tabs={[
       { id: 'ALL', label: ar ? 'الكل' : 'All' },
@@ -87,14 +87,14 @@ export function PurchaseReturnsPage({ locale, canApprove }: { locale: Locale; ca
     <section className="receipts-toolbar"><SearchInput aria-label={ar ? 'بحث في المرتجعات' : 'Search returns'} placeholder={ar ? 'رقم المرتجع أو الفاتورة أو المورد' : 'Return no., invoice no. or supplier'} value={search} onChange={event => { setSearch(event.target.value); page.resetPage() }} /></section>
     {error && <ErrorState title={ar ? 'تعذر تنفيذ العملية' : 'Request failed'} detail={error} />}
     {loading ? <LoadingState /> : visible.length === 0 ? <EmptyState title={search || filter !== 'ALL' ? (ar ? 'لا توجد نتائج' : 'No results') : (ar ? 'لا توجد مرتجعات مشتريات' : 'No purchase returns yet')} /> : <div className="receipts-table-wrap"><table className="receipts-table">
-      <thead><tr><th>{ar ? 'رقم المرتجع' : 'Return no.'}</th><th>{ar ? 'التاريخ' : 'Date'}</th><th>{ar ? 'فاتورة الشراء' : 'Purchase invoice'}</th><th>{ar ? 'المورد' : 'Supplier'}</th><th>{ar ? 'الأسطر' : 'Lines'}</th><th>{ar ? 'القيمة' : 'Amount'}</th><th>{ar ? 'الحالة' : 'Status'}</th><th aria-label={ar ? 'إجراءات' : 'Actions'} /></tr></thead>
+      <thead><tr><th>{ar ? 'رقم المرتجع' : 'Return no.'}</th><th>{ar ? 'التاريخ' : 'Date'}</th><th>{ar ? 'فاتورة الشراء' : 'Purchase invoice'}</th><th>{ar ? 'المورد' : 'Supplier'}</th><th className="num-cell">{ar ? 'الأسطر' : 'Lines'}</th><th className="num-cell">{ar ? 'القيمة' : 'Amount'}</th><th>{ar ? 'الحالة' : 'Status'}</th><th aria-label={ar ? 'إجراءات' : 'Actions'} /></tr></thead>
       <tbody>{page.rows.map(row => <tr key={row.purchaseReturnId}>
         <td><code>{row.returnNo}</code></td>
         <td>{row.returnDate.slice(0, 10)}</td>
         <td><code>{row.invoiceNo}</code></td>
         <td>{row.supplierName}</td>
         <td className="numeric-cell">{row.lineCount}</td>
-        <td className="numeric-cell">{money(row.total)} <small>{row.currencySymbol}</small></td>
+        <td className="numeric-cell"><Money value={row.total} symbol={row.currencySymbol} /></td>
         <td><StatusBadge tone={statusTones[row.status]}>{statusLabels[row.status][ar ? 0 : 1]}</StatusBadge>{row.reviewNote && <small className="muted-cell"> {row.reviewNote}</small>}</td>
         <td>{row.status === 'PENDING' && canApprove && <div className="inventory-row-actions">
           <Button size="small" variant="primary" onClick={() => { setNote(''); setReview({ row, action: 'approve' }) }}>{ar ? 'موافقة' : 'Approve'}</Button>

@@ -38,7 +38,7 @@ describe('App', () => {
     window.history.replaceState(null, '', '/design-lab')
     const fetchMock = mockFetch([health, { method: 'POST', path: '/api/auth/login', body: session }])
     render(<App />)
-    await userEvent.type(screen.getByLabelText(/Email or phone number/), 'mona')
+    await userEvent.type(screen.getByLabelText(/Username, email or phone/), 'mona')
     await userEvent.type(screen.getByLabelText(/^Password/), 'secret')
     await userEvent.click(screen.getByRole('button', { name: /Sign in/ }))
     expect(await screen.findByTitle('Log out')).toBeInTheDocument()
@@ -50,7 +50,7 @@ describe('App', () => {
   it('keeps the user on the login screen when sign-in fails', async () => {
     mockFetch([health, { method: 'POST', path: '/api/auth/login', status: 401 }])
     render(<App />)
-    await userEvent.type(screen.getByLabelText(/Email or phone number/), 'mona')
+    await userEvent.type(screen.getByLabelText(/Username, email or phone/), 'mona')
     await userEvent.type(screen.getByLabelText(/^Password/), 'wrong')
     await userEvent.click(screen.getByRole('button', { name: /Sign in/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid username or password.')

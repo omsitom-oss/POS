@@ -48,7 +48,8 @@ export type IconName =
   | "lock"
   | "save"
   | "close"
-  | "arrow-left";
+  | "arrow-left"
+  | "print";
 
 export function Icon({
   name,
@@ -331,6 +332,13 @@ export function Icon({
     "arrow-left": (
       <>
         <path d="M20 12H4m6-6-6 6 6 6" />
+      </>
+    ),
+    print: (
+      <>
+        <path d="M7 9V3h10v6" />
+        <rect x="3" y="9" width="18" height="8" rx="2" />
+        <path d="M7 14h10v7H7z" />
       </>
     ),
   };

@@ -1,6 +1,7 @@
 import { Children, isValidElement, useEffect, useRef, useState, type ChangeEvent, type HTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { Icon, type IconName } from './icons'
 import { pageSizeOptions, type Pager } from './usePagination'
+import { formatMoney } from '../app/formatters'
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'quiet' | 'danger' | 'icon'; size?: 'small' | 'medium'; loading?: boolean }
 
@@ -162,4 +163,9 @@ export function Modal({ open, title, titleIcon, description, children, onClose, 
 
 export function ConfirmDialog({ open, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', closeLabel = 'Close', onCancel, onConfirm, busy = false, danger = false, confirmDisabled = false }: { open: boolean; title: string; message: string; confirmLabel?: string; cancelLabel?: string; closeLabel?: string; onCancel: () => void; onConfirm: () => void; busy?: boolean; danger?: boolean; confirmDisabled?: boolean }) {
   return <Modal open={open} title={title} closeLabel={closeLabel} onClose={onCancel} busy={busy} footer={<><Button disabled={busy} onClick={onCancel}>{cancelLabel}</Button><Button variant={danger ? 'danger' : 'primary'} disabled={confirmDisabled} loading={busy} onClick={onConfirm}>{confirmLabel}</Button></>}><p className="dialog-message">{message}</p></Modal>
+}
+
+// Money everywhere reads the same in both languages: Latin digits, two decimals, symbol after the amount.
+export function Money({ value, symbol, className = '' }: { value: number; symbol?: string | null; className?: string }) {
+  return <bdi dir="ltr" className={`money ${className}`.trim()}>{formatMoney(value)}{symbol && <span className="money-symbol">{symbol}</span>}</bdi>
 }

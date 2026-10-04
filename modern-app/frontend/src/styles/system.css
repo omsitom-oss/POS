@@ -433,11 +433,6 @@ textarea.text-input { height: auto; padding-block: 10px; }
 .item-info-heading .status-toggle { flex: 0 0 auto; margin-block-start: 1px; }
 .item-units-panel { display: flex; flex-direction: column; gap: 12px; }
 .item-pricing-panel { width: 100%; min-height: max-content; padding: 0; }
-.item-price-history-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
-.item-price-history-table { width: 100%; border-collapse: collapse; color: var(--text-primary); font-size: var(--font-body); }
-.item-price-history-table th, .item-price-history-table td { padding: 12px 14px; border-block-end: 1px solid var(--border); text-align: start; white-space: nowrap; }
-.item-price-history-table th { color: var(--text-secondary); background: var(--table-header); font-size: var(--font-label); font-weight: 700; }
-.item-price-history-table tr:last-child td { border-block-end: 0; }
 .item-price-history-empty { padding: 32px 18px; color: var(--text-muted); text-align: center; }
 .item-units-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .item-units-heading h3 { margin: 0; color: var(--text-primary); font-size: var(--font-section); }
@@ -588,7 +583,9 @@ textarea.text-input { height: auto; padding-block: 10px; }
 
 /* ---------- Feature pages ---------- */
 .settings-toolbar-controls { display: flex; align-items: center; justify-content: end; gap: 12px; }
-.report-metric { display: block; margin-top: 12px; color: var(--primary); font-size: 25px; line-height: 1.2; }
+.report-filters { padding: 14px 18px; margin-bottom: 16px; }
+.report-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1050px) { .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sales-base-currency { display:inline-flex; align-items:center; gap:7px; }
 .sales-base-currency strong { color:var(--primary); border:1px solid color-mix(in srgb,var(--primary) 65%,var(--border)); border-radius:7px; padding:3px 9px; font-size:13px; }
 .sales-editor-card { display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,360px); gap:16px; align-items:stretch; padding:0; background:transparent; border:0; box-shadow:none; }
@@ -813,13 +810,6 @@ textarea.text-input { height: auto; padding-block: 10px; }
 .profile-save-message { margin-block-start: 16px; color: var(--success); font-size: var(--font-body); }
 @media(max-width:760px) { .company-profile-layout, .company-profile-grid { grid-template-columns: 1fr; } }
 .currency-toolbar { display: flex; justify-content: flex-end; margin-block-end: 12px; }
-.currency-table-wrap { width: min(1180px, 100%); margin-inline: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
-.currency-table { width: 100%; border-collapse: collapse; color: var(--text-primary); table-layout: fixed; }
-.currency-table th, .currency-table td { padding: 11px 14px; border-block-end: 1px solid var(--border); text-align: start; white-space: nowrap; }
-.currency-table th { color: var(--text-secondary); background: var(--table-header); font-size: var(--font-label); font-weight: 650; }
-.currency-table td { font-size: var(--font-body); }
-.currency-table tr:last-child td { border-block-end: 0; }
-.currency-table code { color: var(--text-primary); font-family: inherit; font-weight: 600; font-variant-numeric: tabular-nums; }
 .currency-rates-form { display: flex; flex-direction: column; gap: 0; }
 .currency-rate-base { margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--text-primary); font-weight: 650; }
 .currency-rate-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 44%); align-items: center; gap: 24px; padding: 14px 8px; border-block-end: 1px solid var(--border); }
@@ -908,11 +898,6 @@ textarea.text-input { height: auto; padding-block: 10px; }
 .accounts-tabs button { min-width: 120px; padding: 9px 16px; border: 0; border-radius: var(--radius-sm); color: var(--text-secondary); background: transparent; cursor: pointer; font: inherit; }
 .accounts-tabs button.is-active { color: var(--text-primary); background: var(--table-header); box-shadow: inset 0 0 0 1px var(--border); }
 .accounts-toolbar .search-input-wrap { min-width: min(390px, 100%); }
-.accounts-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
-.accounts-table { width: 100%; border-collapse: collapse; min-width: 680px; }
-.accounts-table th, .accounts-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); text-align: start; }
-.accounts-table th { color: var(--text-secondary); background: var(--table-header); font-size: var(--font-label); font-weight: 700; }
-.accounts-table tr:last-child td { border-bottom: 0; }
 .accounts-table td strong { display: block; color: var(--text-primary); }
 .accounts-table td small { color: var(--text-muted); }
 .accounts-code { display: block; margin-top: 3px; font-size: 11px; }
@@ -1045,14 +1030,7 @@ textarea.text-input { height: auto; padding-block: 10px; }
 .receipt-filters button, .receipt-type-picker button { border: 0; border-radius: var(--radius-sm); color: var(--text-secondary); background: transparent; cursor: pointer; font: inherit; }
 .receipt-filters button { padding: 8px 14px; font-size: var(--font-label); }
 .receipt-filters button.is-active, .receipt-type-picker button.is-active { color: var(--text-primary); background: var(--table-header); box-shadow: inset 0 0 0 1px var(--border); }
-.receipts-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow-card); }
-.receipts-table { width: 100%; min-width: 980px; border-collapse: collapse; color: var(--text-primary); }
-.receipts-table th, .receipts-table td { padding: 12px 14px; border-block-end: 1px solid var(--border); text-align: start; white-space: nowrap; }
-.receipts-table th { color: var(--text-secondary); background: var(--table-header); font-size: var(--font-label); font-weight: 650; }
-.receipts-table td { font-size: var(--font-body); }
-.receipts-table tr:last-child td { border-block-end: 0; }
-.receipts-table code { color: var(--text-primary); font-family: inherit; font-weight: 600; font-variant-numeric: tabular-nums; }
-.numeric-cell { font-variant-numeric: tabular-nums; text-align: left !important; direction: ltr; }
+.numeric-cell { font-variant-numeric: tabular-nums; text-align: end !important; }
 .receipt-type-badge { display: inline-flex; align-items: center; padding: 4px 9px; border-radius: 999px; font-size: var(--font-label); font-weight: 650; }
 .receipt-type-in { color: var(--success); background: var(--success-soft); }
 .receipt-type-out { color: var(--warning); background: var(--warning-soft); }
@@ -1255,3 +1233,22 @@ textarea.text-input { height: auto; padding-block: 10px; }
 .doc-number { font-family: var(--font-mono); font-size: 13px; }
 .money-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (max-width: 1050px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .home-grid { grid-template-columns: 1fr; } }
+
+/* ---------- Hand-built tables ----------
+ * Pages that build <table> by hand share one look with DataTable: same header, row height, hover and number alignment.
+ * Wide tables scroll inside their frame instead of pushing the page. */
+.currency-table-wrap, .receipts-table-wrap, .accounts-table-wrap, .item-price-history-table-wrap { min-width: 0; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-card); }
+.currency-table-wrap { width: min(1400px, 100%); margin-inline: auto; }
+.currency-table, .receipts-table, .accounts-table, .item-price-history-table { width: 100%; border-collapse: separate; border-spacing: 0; color: var(--text-primary); font-size: var(--font-table); line-height: 1.5; }
+:is(.currency-table, .receipts-table, .accounts-table, .item-price-history-table) th { position: sticky; z-index: 1; top: 0; height: 42px; padding: 0 14px; border-bottom: 1px solid var(--border); color: var(--text-muted); background: var(--table-header); font-size: 13px; font-weight: 600; text-align: start; white-space: nowrap; }
+:is(.currency-table, .receipts-table, .accounts-table, .item-price-history-table) td { height: var(--row-comfortable); padding: 8px 14px; border-bottom: 1px solid var(--border); text-align: start; vertical-align: middle; }
+:is(.currency-table, .receipts-table, .accounts-table, .item-price-history-table) tbody tr:last-child td { border-bottom: 0; }
+:is(.currency-table, .receipts-table, .accounts-table, .item-price-history-table) tbody tr:hover td { background: var(--hover); }
+:is(.currency-table, .receipts-table, .accounts-table, .item-price-history-table) code { color: var(--text-primary); font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
+.accounts-table td strong { display: block; color: var(--text-primary); }
+.accounts-table td small { color: var(--text-muted); }
+.receipts-table td, .item-price-history-table td { white-space: nowrap; }
+:is(.currency-table, .receipts-table, .accounts-table, .item-price-history-table, .data-table) :is(th, td).num-cell { text-align: end; }
+.money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.money-symbol { margin-inline-start: 4px; color: var(--text-muted); font-size: .88em; }
+:is(.receipts-table, .currency-table) td.wrap-cell { min-width: 180px; max-width: 320px; white-space: normal; }

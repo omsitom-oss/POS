@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { LoadingState, ErrorState, StatusBadge, TableFooter, SearchInput } from '../../components/shared'
 import { usePagination } from '../../components/usePagination'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
+import { formatMoney } from '../../app/formatters'
 
 type Partner = { partnerId: number; partnerCode: string; partnerName: string; status: string }
 type Treasury = { treasuryId: number; treasuryCode: string; nameAr: string; nameEn: string; treasureType: string; currencyId: number; currencySymbol: string; currencyCode: string; isActive: boolean }
@@ -11,7 +12,7 @@ type PartnerAccountRow = PartnerBalance & { partnerId: number; partnerCode: stri
 type TreasuryAccountRow = Treasury & { amount: number; currencyNameEn: string; currencyNameAr: string; flagBase64: string | null }
 type ChartAccount = { accountId: number; branchId: number; accountCode: string; nameAr: string; nameEn: string; accountType: string; balance: number; isSystem: boolean; isActive: boolean }
 
-const formatAmount = (value: number) => Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const formatAmount = (value: number) => formatMoney(Math.abs(value))
 
 async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url)

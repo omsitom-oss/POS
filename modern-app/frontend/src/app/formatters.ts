@@ -28,3 +28,13 @@ export function formatMoney(value: number, symbol = '') {
   const amount = value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return symbol ? `${amount} ${symbol}` : amount
 }
+
+// Quantities keep up to three decimals (strips, millilitres) and drop trailing zeros.
+export function formatQuantity(value: number) {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 3 })
+}
+
+// Whole counts such as invoices or items.
+export function formatCount(value: number) {
+  return Math.round(value).toLocaleString('en-US')
+}

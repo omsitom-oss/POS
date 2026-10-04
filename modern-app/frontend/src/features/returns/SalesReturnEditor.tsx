@@ -51,7 +51,7 @@ export function SalesReturnEditor({ ar, source, treasuries, onCancel, onSaved }:
     <section className="sales-items-panel" aria-label={ar ? 'أصناف الفاتورة' : 'Invoice items'}>
       <div className="sales-panel-heading"><div><span className="sales-panel-icon" aria-hidden="true"><Icon name="sales" size={20} /></span><h2>{source.saleNo}</h2></div><span className="muted-cell">{source.saleDate.slice(0, 10)} · {source.customerName ?? (ar ? 'بيع مباشر' : 'Walk-in')} · {money(source.total)} {source.currencySymbol}</span></div>
       <div className="receipts-table-wrap"><table className="receipts-table return-lines-table">
-        <thead><tr><th>{ar ? 'الصنف' : 'Item'}</th><th>{ar ? 'المباع' : 'Sold'}</th><th>{ar ? 'المُرجع سابقاً' : 'Returned'}</th><th>{ar ? 'المتبقي' : 'Left'}</th><th>{ar ? 'سعر البيع' : 'Price'}</th><th>{ar ? 'كمية الإرجاع' : 'Return qty'}</th><th>{ar ? 'القيمة' : 'Value'}</th></tr></thead>
+        <thead><tr><th>{ar ? 'الصنف' : 'Item'}</th><th className="num-cell">{ar ? 'المباع' : 'Sold'}</th><th className="num-cell">{ar ? 'المُرجع سابقاً' : 'Returned'}</th><th className="num-cell">{ar ? 'المتبقي' : 'Left'}</th><th className="num-cell">{ar ? 'سعر البيع' : 'Price'}</th><th>{ar ? 'كمية الإرجاع' : 'Return qty'}</th><th className="num-cell">{ar ? 'القيمة' : 'Value'}</th></tr></thead>
         <tbody>{source.lines.map(line => <tr key={line.saleLineId}>
           <td><strong>{ar ? line.itemNameAr : line.itemNameEn}</strong> <small dir="ltr">{line.itemCode}</small></td>
           <td className="numeric-cell">{quantity(line.soldQuantity)}</td>

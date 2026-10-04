@@ -50,7 +50,7 @@ export function PurchaseReturnEditor({ ar, source, onCancel, onSaved }: { ar: bo
     <section className="sales-items-panel" aria-label={ar ? 'أصناف الفاتورة' : 'Invoice items'}>
       <div className="sales-panel-heading"><div><span className="sales-panel-icon" aria-hidden="true"><Icon name="purchases" size={20} /></span><h2>{source.invoiceNo}</h2></div><span className="muted-cell">{source.purchaseDate.slice(0, 10)} · {source.supplierName} · {money(source.total)} {source.currencySymbol}</span></div>
       <div className="receipts-table-wrap"><table className="receipts-table return-lines-table">
-        <thead><tr><th>{ar ? 'الصنف' : 'Item'}</th><th>{ar ? 'الباتش / الانتهاء' : 'Batch / expiry'}</th><th>{ar ? 'المشترى' : 'Bought'}</th><th>{ar ? 'المُرجع' : 'Returned'}</th><th>{ar ? 'في المخزون' : 'In stock'}</th><th>{ar ? 'سعر الشراء' : 'Cost'}</th><th>{ar ? 'كمية الإرجاع' : 'Return qty'}</th><th>{ar ? 'القيمة' : 'Value'}</th></tr></thead>
+        <thead><tr><th>{ar ? 'الصنف' : 'Item'}</th><th>{ar ? 'الباتش / الانتهاء' : 'Batch / expiry'}</th><th className="num-cell">{ar ? 'المشترى' : 'Bought'}</th><th className="num-cell">{ar ? 'المُرجع' : 'Returned'}</th><th className="num-cell">{ar ? 'في المخزون' : 'In stock'}</th><th className="num-cell">{ar ? 'سعر الشراء' : 'Cost'}</th><th>{ar ? 'كمية الإرجاع' : 'Return qty'}</th><th className="num-cell">{ar ? 'القيمة' : 'Value'}</th></tr></thead>
         <tbody>{source.lines.map(line => <tr key={line.purchaseLineId}>
           <td><strong>{ar ? line.itemNameAr : line.itemNameEn}</strong> {line.unitName && <small>({line.unitName})</small>}</td>
           <td><span dir="ltr">{line.batchNo ?? '—'}</span><br /><small className="muted-cell">{line.expiryDate?.slice(0, 10) ?? '—'}</small></td>

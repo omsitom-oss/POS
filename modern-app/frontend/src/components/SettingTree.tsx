@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Icon } from './icons'
 import { Button, IconButton, StatusBadge } from './shared'
 
 export type SettingNode = { settingId: number; settingTypeId: number; parentSettingId: number | null; code: string | null; valueAr: string; valueEn: string; sortOrder: number; isActive: boolean; children: SettingNode[] }
@@ -19,7 +20,7 @@ function TreeRow({ node, locale, depth, selectedId, onSelect, onEdit, onAddChild
       <button className="tree-expander" aria-label={hasChildren ? (expanded ? labels.collapse : labels.expand) : label} disabled={!hasChildren} onClick={() => setExpanded(value => !value)}>{hasChildren ? (expanded ? '−' : '+') : <span className="tree-leaf" />}</button>
       <button className="tree-node-label" onClick={() => onSelect(node)}><strong>{label}</strong>{node.code && <code>{node.code}</code>}</button>
       {!node.isActive && <StatusBadge tone="warning">{labels.inactive}</StatusBadge>}
-      <div className="tree-actions"><IconButton size="small" label={labels.child} onClick={() => onAddChild(node)}>＋</IconButton><IconButton size="small" label={labels.edit} onClick={() => onEdit(node)}>✎</IconButton><Button size="small" variant={node.isActive ? 'quiet' : 'secondary'} onClick={() => onToggle(node)}>{node.isActive ? labels.deactivate : labels.activate}</Button></div>
+      <div className="tree-actions"><IconButton size="small" label={labels.child} onClick={() => onAddChild(node)}><Icon name="plus" size={18} /></IconButton><IconButton size="small" label={labels.edit} onClick={() => onEdit(node)}>✎</IconButton><Button size="small" variant={node.isActive ? 'quiet' : 'secondary'} onClick={() => onToggle(node)}>{node.isActive ? labels.deactivate : labels.activate}</Button></div>
     </div>
     {hasChildren && expanded && <div role="group">{node.children.map(child => <TreeRow key={child.settingId} node={child} locale={locale} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} onEdit={onEdit} onAddChild={onAddChild} onToggle={onToggle} />)}</div>}
   </div>

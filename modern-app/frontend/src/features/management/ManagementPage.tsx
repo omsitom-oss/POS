@@ -220,7 +220,7 @@ function CustomersList({ locale, onNavigate }: { locale: Locale; onNavigate: (de
 
   return <>
   <div className="management-page">
-    <PageHeader eyebrow={t.eyebrow} title={t.customers} description={t.description} actions={<Button variant="primary" onClick={() => onNavigate('new-customer')}>＋ {t.add}</Button>} />
+    <PageHeader eyebrow={t.eyebrow} title={t.customers} description={t.description} actions={<Button variant="primary" onClick={() => onNavigate('new-customer')}><Icon name="plus" size={18} />{t.add}</Button>} />
     {error ? <div className="management-state"><ErrorState title={error} detail="" /><Button onClick={retry}>{t.retry}</Button></div>
       : loading ? <LoadingState label={t.loading} />
         : rows.length === 0 ? <EmptyState title={t.noCustomers} detail={t.noCustomersDetail} />
