@@ -136,7 +136,8 @@ export function Modal({ open, title, titleIcon, description, children, onClose, 
     if (!open) return
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const focusables = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])') ?? [])
-    window.requestAnimationFrame(() => (dialogRef.current?.querySelector<HTMLElement>('[autofocus]') ?? focusables()[0] ?? dialogRef.current)?.focus())
+    // Skip the initial focus if the user already moved into the dialog, so it never steals focus mid-typing.
+    window.requestAnimationFrame(() => { if (dialogRef.current?.contains(document.activeElement)) return; (dialogRef.current?.querySelector<HTMLElement>('[autofocus]') ?? focusables()[0] ?? dialogRef.current)?.focus() })
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !busyRef.current) { event.preventDefault(); closeRef.current() }
       if (event.key === 'Tab') {
