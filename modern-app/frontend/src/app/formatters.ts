@@ -22,3 +22,9 @@ export function localDate(value: Date = new Date()) {
   const pad = (part: number) => String(part).padStart(2, '0')
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
 }
+
+// Money as the shop reads it in both languages: Latin digits, two decimals, symbol after the amount.
+export function formatMoney(value: number, symbol = '') {
+  const amount = value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return symbol ? `${amount} ${symbol}` : amount
+}
