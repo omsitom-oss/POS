@@ -11,13 +11,15 @@ public static class StockBatches
     // Posted stock of a purchase line, as a correlated subquery on a row aliased pl.
     public const string RemainingSql = "(SELECT COALESCE(SUM(bm.Quantity),0) FROM dbo.StockMovements bm WHERE bm.PurchaseLineId=pl.PurchaseLineId AND bm.PostingStatus=N'POSTED')";
 
-    public sealed record Take(long PurchaseLineId, decimal Quantity);
+    // A null PurchaseLineId takes from stock that has no batch (it came back from a sale made before batches were tracked).
+    public sealed record Take(long? PurchaseLineId, decimal Quantity);
 
     // Splits a sale quantity across the branch's unexpired batches of the item, earliest expiry first. A batch with no
-    // expiry date is used last. Throws when unexpired stock cannot cover the quantity, saying how much is expired.
+    // expiry date is used after those, and stock with no batch at all is used last. Throws when unexpired stock cannot
+    // cover the quantity, saying how much is expired.
     public static async Task<IReadOnlyList<Take>> AllocateAsync(DbConnection db, DbTransaction tx, int branch, long item, decimal quantity, DateTime today, Func<string, Exception> error, CancellationToken ct)
     {
-        var batches = new List<(long Line, decimal Remaining, bool Expired)>();
+        var batches = new List<(long? Line, decimal Remaining, bool Expired)>();
         await using (var command = db.CreateCommand())
         {
             command.Transaction = tx;
@@ -25,6 +27,14 @@ public static class StockBatches
             Add(command, "@branch", branch, DbType.Int32); Add(command, "@item", item, DbType.Int64); Add(command, "@today", today.Date, DbType.Date);
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct)) batches.Add((reader.GetInt64(0), reader.GetDecimal(1), reader.GetInt32(2) == 1));
+        }
+        await using (var command = db.CreateCommand())
+        {
+            command.Transaction = tx;
+            command.CommandText = "SELECT COALESCE(SUM(Quantity),0) FROM dbo.StockMovements WHERE BranchId=@branch AND ItemId=@item AND PurchaseLineId IS NULL AND PostingStatus=N'POSTED'";
+            Add(command, "@branch", branch, DbType.Int32); Add(command, "@item", item, DbType.Int64);
+            var unbatched = Convert.ToDecimal(await command.ExecuteScalarAsync(ct));
+            if (unbatched > 0) batches.Add((null, unbatched, false));
         }
         var sellable = batches.Where(batch => !batch.Expired).Sum(batch => batch.Remaining);
         if (quantity > sellable)

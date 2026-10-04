@@ -6,7 +6,7 @@ using ElitePos.LocalService.Data.Pos;
 namespace ElitePos.LocalService.Tests;
 
 // Batch-level stock: sales take from the batch that expires first and never sell expired stock, returns go back to the
-// batch they came from, and migration 051 gives existing movements their batches.
+// batch they came from, and migration 052 gives existing movements their batches.
 [Collection(SqlServerCollection.Name)]
 public sealed class SqlServerBatchTests(SqlServerApiFixture fixture) : IClassFixture<SqlServerApiFixture>
 {
@@ -72,6 +72,24 @@ public sealed class SqlServerBatchTests(SqlServerApiFixture fixture) : IClassFix
     }
 
     [Fact]
+    public async Task Stock_with_no_batch_is_sold_after_the_batches()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var x = await NewItemAsync("BT-NONE");
+        await BuyAsync(refs, (x, 2, "ONLY", Today.AddDays(30)));
+        // Three units came back from a sale made before batches were tracked, so they have no batch.
+        await fixture.Database.ExecuteAsync($"INSERT dbo.StockMovements(BranchId,ItemId,Quantity,UnitCost,PostingStatus) VALUES({fixture.BranchA},{x},3,4,N'POSTED')", "unbatched stock", Ct);
+
+        await SellAsync(refs, x, 4);
+
+        Assert.Equal(0m, (await BatchesAsync(x))["ONLY"]);
+        Assert.Equal(1, await fixture.Database.CountAsync($"SELECT SUM(Quantity) FROM dbo.StockMovements WHERE ItemId={x} AND PurchaseLineId IS NULL AND PostingStatus=N'POSTED'", Ct));
+        var refused = await Admin.PostAsJsonAsync("/api/sales", SaleBody(refs, x, 2), Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+    }
+
+    [Fact]
     public async Task A_purchase_return_can_only_take_what_is_left_in_the_batch()
     {
         SkipWithoutSqlServer();
@@ -90,12 +108,12 @@ public sealed class SqlServerBatchTests(SqlServerApiFixture fixture) : IClassFix
     }
 
     [Fact]
-    public async Task Migration_051_puts_existing_movements_into_batches()
+    public async Task Migration_052_puts_existing_movements_into_batches()
     {
         SkipWithoutSqlServer();
         await using var database = await SqlServerMigrationTests.ScratchDatabase.CreateAsync(SqlServerApiFixture.ServerConnectionString!, Ct);
         var migrations = PosMigrationRunner.GetMigrations();
-        foreach (var migration in migrations.Where(m => m.Version < 51))
+        foreach (var migration in migrations.Where(m => m.Version < 52))
             await database.ExecuteAsync(MigrationSql.Read(migration.Name), $"POS {migration.Version:D3}", Ct);
 
         // Stock as the app wrote it before batches: two batches bought, 4 sold, 1 returned, 1 disposed from LATE.
@@ -128,7 +146,7 @@ public sealed class SqlServerBatchTests(SqlServerApiFixture fixture) : IClassFix
             INSERT dbo.StockMovements(BranchId,ItemId,PurchaseId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@purchase,-1,5,N'POSTED');
             """, "pre-batch stock", Ct);
 
-        await database.ExecuteAsync(MigrationSql.Read(migrations.Single(m => m.Version == 51).Name), "POS 051", Ct);
+        await database.ExecuteAsync(MigrationSql.Read(migrations.Single(m => m.Version == 52).Name), "POS 052", Ct);
 
         // Every movement has a batch, the total is unchanged, and each batch holds what FEFO says it should:
         // the sale took 3 SOON + 1 LATE, the return put 1 back into LATE, and the disposal took 1 from LATE.
