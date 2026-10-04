@@ -20,7 +20,9 @@ import { SalesReturnsPage } from '../features/returns/SalesReturnsPage'
 import { PurchaseReturnsPage } from '../features/returns/PurchaseReturnsPage'
 import { ReportsPage } from '../features/reports/ReportsPage'
 import { HomePage } from '../features/home/HomePage'
+import { EmptyState } from '../components/shared'
 import { clearSession, readSession, saveSession, sessionExpiredEvent } from './session'
+import { canOpenSection } from './access'
 
 type Health = { provider: string; connected: boolean; message: string }
 
@@ -101,11 +103,34 @@ function App() {
     return () => { active = false }
   }, [isManagement])
 
+  // Permissions are saved with the session at sign-in; refresh them so role changes show without signing in again.
+  const sessionToken = session?.token
+  useEffect(() => {
+    if (!sessionToken) return
+    let active = true
+    fetch('/api/auth/me')
+      .then(response => response.ok ? response.json() as Promise<Pick<AuthSession, 'permissions' | 'roleIds'>> : null)
+      .then(profile => {
+        if (!active || !profile) return
+        setSession(current => {
+          if (!current || current.token !== sessionToken) return current
+          const next = { ...current, permissions: profile.permissions, roleIds: profile.roleIds }
+          saveSession(next)
+          return next
+        })
+      })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [sessionToken])
+
   if (!session) return <LoginPage locale={locale} onLogin={setSession} themeMode={themeMode} onLocaleChange={setLocale} onThemeModeChange={setThemeMode} />
   if (session.mustChangePassword) return <ChangePasswordPage locale={locale} onChanged={() => { const next = { ...session, mustChangePassword: false }; saveSession(next); setSession(next) }} />
 
-  const content = section === 'home'
-    ? <HomePage locale={locale} branchId={session.branchId} onNavigate={navigate} />
+  const canOpen = (target: string) => canOpenSection(target, session.permissions)
+  const content = !canOpen(section)
+    ? <NoAccess locale={locale} />
+    : section === 'home'
+    ? <HomePage locale={locale} branchId={session.branchId} onNavigate={navigate} canOpen={canOpen} />
     : section === 'accounts'
     ? <AccountsPage locale={locale} />
     : section === 'treasury-transfer'
@@ -138,7 +163,13 @@ function App() {
     ? <ManagementPage locale={locale} view={section === 'new-customer' ? 'new-customer' : customerPublicId ? 'customer-details' : 'customers'} customerPublicId={customerPublicId} onNavigate={navigate} />
     : <DesignLabPage locale={locale} section={section.replace(/^lab:/, '')} />
 
-  return <AppLayout locale={locale} onLocaleChange={setLocale} themeMode={themeMode} onThemeModeChange={setThemeMode} activeSection={section} onSectionChange={navigate} serviceOnline={isManagement ? managementOnline : health?.connected ?? null} serviceProvider={isManagement ? 'POSManagement' : health?.provider} operatorName={session.userName} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} onLogout={() => { void fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined); clearSession(); setSession(null) }} onExchangeRates={isManagement ? undefined : () => setRatesOpen(true)}><>{content}<CurrencyRatesDialog open={ratesOpen} locale={locale} onClose={() => setRatesOpen(false)} /></></AppLayout>
+  return <AppLayout locale={locale} onLocaleChange={setLocale} themeMode={themeMode} onThemeModeChange={setThemeMode} activeSection={section} onSectionChange={navigate} serviceOnline={isManagement ? managementOnline : health?.connected ?? null} serviceProvider={isManagement ? 'POSManagement' : health?.provider} operatorName={session.userName} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} onLogout={() => { void fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined); clearSession(); setSession(null) }} onExchangeRates={isManagement ? undefined : () => setRatesOpen(true)} canOpen={canOpen}><>{content}<CurrencyRatesDialog open={ratesOpen} locale={locale} onClose={() => setRatesOpen(false)} /></></AppLayout>
+}
+
+function NoAccess({ locale }: { locale: Locale }) {
+  return locale === 'ar'
+    ? <EmptyState title="لا تملك صلاحية فتح هذه الصفحة" detail="اطلب من المسؤول إضافة الصلاحية إلى دورك." />
+    : <EmptyState title="You don't have access to this page" detail="Ask an administrator to add the permission to your role." />
 }
 
 const sectionPaths: Record<string, string> = {

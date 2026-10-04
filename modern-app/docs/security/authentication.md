@@ -53,6 +53,8 @@ Each permission code is an authorization policy (`server/Security/PermissionCode
 
 Migration 046 adds these codes. So that existing users keep working after the upgrade, every existing role receives the day-to-day permissions and every role that already had `USER_MANAGEMENT` receives all of them. Trim roles afterwards in Settings > Roles.
 
+The app hides menu items and pages the user's permissions do not open (`frontend/src/app/access.ts`) and refreshes the permission list from `/api/auth/me` when it loads. That is for convenience only: the API enforces every permission itself.
+
 ## Branch scoping
 
 The branch comes from the signed-in user, not from the request:

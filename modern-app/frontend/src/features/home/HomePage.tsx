@@ -19,7 +19,7 @@ async function getJson<T>(url: string): Promise<T | null> {
   try { const response = await fetch(url); return response.ok ? await response.json() as T : null } catch { return null }
 }
 
-export function HomePage({ locale, branchId, onNavigate }: { locale: Locale; branchId: number; onNavigate: (section: string) => void }) {
+export function HomePage({ locale, branchId, onNavigate, canOpen = () => true }: { locale: Locale; branchId: number; onNavigate: (section: string) => void; canOpen?: (section: string) => boolean }) {
   const ar = locale === 'ar'
   const [data, setData] = useState<HomeData | null>(null)
   const load = useCallback(async () => {
@@ -40,7 +40,7 @@ export function HomePage({ locale, branchId, onNavigate }: { locale: Locale; bra
     ? { title: 'اليوم', salesToday: 'مبيعات اليوم', invoices: 'فواتير اليوم', average: 'متوسط الفاتورة', returns: 'مرتجعات اليوم', vsYesterday: 'مقارنة بالأمس', week: 'المبيعات آخر 7 أيام', attention: 'يحتاج إلى متابعة', allClear: 'لا شيء يحتاج إلى متابعة الآن.', outOfStock: (n: number) => n === 1 ? 'صنف واحد نفد من المخزون' : `${n} أصناف نفدت من المخزون`, belowMin: (n: number) => n === 1 ? 'صنف واحد تحت الحد الأدنى' : `${n} أصناف تحت الحد الأدنى`, pendingReturns: (n: number) => n === 1 ? 'مرتجع شراء واحد بانتظار الموافقة' : `${n} مرتجعات شراء بانتظار الموافقة`, noCurrency: 'لم تُحدَّد العملة الأساسية', open: 'فتح', latest: 'آخر المبيعات', invoice: 'الفاتورة', date: 'التاريخ', customer: 'العميل', total: 'الإجمالي', walkIn: 'عميل نقدي', noSales: 'لا توجد مبيعات هذا الأسبوع.', newSale: 'بيع جديد', newPurchase: 'فاتورة شراء', newReceipt: 'إيصال', unavailable: 'غير متاح' }
     : { title: 'Today', salesToday: 'Sales today', invoices: 'Invoices today', average: 'Average invoice', returns: 'Returns today', vsYesterday: 'vs yesterday', week: 'Sales, last 7 days', attention: 'Needs attention', allClear: 'Nothing needs attention right now.', outOfStock: (n: number) => n === 1 ? '1 item out of stock' : `${n} items out of stock`, belowMin: (n: number) => n === 1 ? '1 item below minimum level' : `${n} items below minimum level`, pendingReturns: (n: number) => n === 1 ? '1 purchase return waiting for approval' : `${n} purchase returns waiting for approval`, noCurrency: 'No primary currency is set', open: 'Open', latest: 'Latest sales', invoice: 'Invoice', date: 'Date', customer: 'Customer', total: 'Total', walkIn: 'Walk-in', noSales: 'No sales this week.', newSale: 'New sale', newPurchase: 'New purchase', newReceipt: 'New receipt', unavailable: 'Not available' }
 
-  const actions = <><Button onClick={() => onNavigate('receipts')}><Icon name="history" size={18} />{t.newReceipt}</Button><Button onClick={() => onNavigate('purchases')}><Icon name="purchases" size={18} />{t.newPurchase}</Button><Button variant="primary" onClick={() => onNavigate('sales')}><Icon name="sales" size={18} />{t.newSale}</Button></>
+  const actions = <>{canOpen('receipts') && <Button onClick={() => onNavigate('receipts')}><Icon name="history" size={18} />{t.newReceipt}</Button>}{canOpen('purchases') && <Button onClick={() => onNavigate('purchases')}><Icon name="purchases" size={18} />{t.newPurchase}</Button>}{canOpen('sales') && <Button variant="primary" onClick={() => onNavigate('sales')}><Icon name="sales" size={18} />{t.newSale}</Button>}</>
   if (!data) return <div className="home-page"><PageHeader title={t.title} actions={actions} /><LoadingState /></div>
 
   const { today, yesterday, symbol } = data
@@ -53,7 +53,7 @@ export function HomePage({ locale, branchId, onNavigate }: { locale: Locale; bra
     ...(belowMin ? [{ key: 'min', tone: 'warning' as const, label: t.belowMin(belowMin), target: 'inventory', icon: 'inventory' as IconName }] : []),
     ...(pendingReturns ? [{ key: 'ret', tone: 'info' as const, label: t.pendingReturns(pendingReturns), target: 'purchase-returns', icon: 'swap' as IconName }] : []),
     ...(!symbol ? [{ key: 'cur', tone: 'warning' as const, label: t.noCurrency, target: 'settings', icon: 'currency' as IconName }] : []),
-  ]
+  ].filter(item => canOpen(item.target))
   const days = Array.from({ length: 7 }, (_, index) => dayOffset(index - 6))
   const byDay = days.map(day => ({ day, total: (data.sales ?? []).filter(row => row.saleDate.slice(0, 10) === day).reduce((sum, row) => sum + row.total, 0) }))
   const peak = Math.max(...byDay.map(row => row.total), 1)
@@ -78,7 +78,7 @@ export function HomePage({ locale, branchId, onNavigate }: { locale: Locale; bra
       </Card>
     </div>
     <Card className="home-panel">
-      <div className="home-panel-head"><h2>{t.latest}</h2><Button variant="ghost" size="small" onClick={() => onNavigate('sales')}>{t.open}<Icon name="arrow-right" size={16} className="icon-flip-rtl" /></Button></div>
+      <div className="home-panel-head"><h2>{t.latest}</h2>{canOpen('sales') && <Button variant="ghost" size="small" onClick={() => onNavigate('sales')}>{t.open}<Icon name="arrow-right" size={16} className="icon-flip-rtl" /></Button>}</div>
       {data.sales?.length ? <table className="data-table home-table"><thead><tr><th>{t.invoice}</th><th>{t.date}</th><th>{t.customer}</th><th className="align-end">{t.total}</th></tr></thead><tbody>{data.sales.slice(0, 6).map(row => <tr key={row.saleNo}><td className="doc-number">{row.saleNo}</td><td>{row.saleDate.slice(0, 10)}</td><td>{row.customerName ?? <span className="muted-cell">{t.walkIn}</span>}</td><td className="align-end money-cell"><bdi dir="ltr">{formatMoney(row.total, row.currencySymbol)}</bdi></td></tr>)}</tbody></table> : <p className="home-empty">{data.sales ? t.noSales : t.unavailable}</p>}
     </Card>
   </div>
