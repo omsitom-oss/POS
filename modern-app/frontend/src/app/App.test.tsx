@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { mockFetch } from '../test/fetchMock'
@@ -73,5 +73,35 @@ describe('App', () => {
     await userEvent.click(screen.getByTitle('Log out'))
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
     await waitFor(() => expect(localStorage.getItem('elite-pos-session')).toBeNull())
+  })
+  it('shows only the menu items the user may open', async () => {
+    window.history.replaceState(null, '', '/design-lab')
+    localStorage.setItem('elite-pos-session', JSON.stringify(session))
+    mockFetch([health])
+    render(<App />)
+    const nav = await screen.findByRole('navigation', { name: 'Main navigation' })
+    expect(within(nav).getByRole('button', { name: 'Sales' })).toBeInTheDocument()
+    expect(within(nav).getByRole('button', { name: 'Items' })).toBeInTheDocument()
+    for (const name of ['Purchases', 'Reports', 'Users', 'Settings', 'Receipts']) expect(within(nav).queryByRole('button', { name })).not.toBeInTheDocument()
+    expect(within(nav).queryByText('Money')).not.toBeInTheDocument()
+  })
+
+  it('refuses a page the user may not open', async () => {
+    window.history.replaceState(null, '', '/users')
+    localStorage.setItem('elite-pos-session', JSON.stringify(session))
+    const fetchMock = mockFetch([health])
+    render(<App />)
+    expect(await screen.findByText("You don't have access to this page")).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/users'))).toBe(false)
+  })
+
+  it('refreshes permissions from the service after loading a saved session', async () => {
+    window.history.replaceState(null, '', '/design-lab')
+    localStorage.setItem('elite-pos-session', JSON.stringify(session))
+    mockFetch([health, { path: '/api/auth/me', body: { ...session, permissions: ['SALES_VIEW', 'REPORTS_VIEW'] } }])
+    render(<App />)
+    const nav = await screen.findByRole('navigation', { name: 'Main navigation' })
+    expect(await within(nav).findByRole('button', { name: 'Reports' })).toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem('elite-pos-session')!).permissions).toEqual(['SALES_VIEW', 'REPORTS_VIEW'])
   })
 })

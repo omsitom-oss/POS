@@ -46,7 +46,7 @@ const navGroups: NavGroup[] = [
 
 const isActive = (item: NavItem, section: string) => item.match ? item.match(section) : section === item.id
 
-export function AppLayout({ locale, onLocaleChange, themeMode, onThemeModeChange, activeSection, onSectionChange, children, serviceOnline, serviceProvider, onExchangeRates, operatorName, branchName, onLogout }: {
+export function AppLayout({ locale, onLocaleChange, themeMode, onThemeModeChange, activeSection, onSectionChange, children, serviceOnline, serviceProvider, onExchangeRates, operatorName, branchName, onLogout, canOpen = () => true }: {
   locale: Locale
   onLocaleChange: (locale: Locale) => void
   themeMode: ThemeMode
@@ -60,11 +60,14 @@ export function AppLayout({ locale, onLocaleChange, themeMode, onThemeModeChange
   operatorName?: string
   branchName?: string
   onLogout?: () => void
+  // Menu items the signed-in user may not open are left out; a group with none left is hidden.
+  canOpen?: (section: string) => boolean
 }) {
   const rtl = locale === 'ar'
   const [collapsed, setCollapsed] = useState(false)
   const designLabActive = activeSection.startsWith('lab:')
   const showDesignLab = import.meta.env.DEV || designLabActive
+  const visibleGroups = navGroups.map(group => ({ ...group, items: group.items.filter(item => canOpen(item.id)) })).filter(group => group.items.length > 0)
   const activeGroup = navGroups.find(group => group.items.some(item => isActive(item, activeSection)))
   const activeItem = activeGroup?.items.find(item => isActive(item, activeSection))
   const groupLabel = activeGroup && (rtl ? activeGroup.ar : activeGroup.en)
@@ -83,7 +86,7 @@ export function AppLayout({ locale, onLocaleChange, themeMode, onThemeModeChange
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">E</span><span className="brand-copy"><strong>Elite POS</strong><small>{rtl ? 'نظام نقاط البيع' : 'Point of sale'}</small></span></div>
       <nav className="side-nav" aria-label={labels.nav}>
-        {navGroups.map(group => <div key={group.en || 'home'} className="nav-group">
+        {visibleGroups.map(group => <div key={group.en || 'home'} className="nav-group">
           {group.en && <div className="nav-caption">{rtl ? group.ar : group.en}</div>}
           {group.items.map(item => navButton(item.id, rtl ? item.ar : item.en, item.icon, isActive(item, activeSection)))}
         </div>)}
