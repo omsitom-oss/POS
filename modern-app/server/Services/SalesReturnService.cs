@@ -208,14 +208,23 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
 
             // The reverse of the sale journal: sales revenue is debited and the refund leaves the treasury,
             // or is credited to the customer's receivable when the invoice was sold on account.
+            // The goods come back into inventory at the cost the sale took them out at, reversing its cost of goods sold.
+            var journal = new List<TransactionLineRequest>();
             if (net > 0)
-                await transactions.PostAsync(db, tx, new TransactionWriteRequest("SALES_RETURN", "SALES_RETURN", returnNo, $"Return of {source.SaleNo}", source.CurrencyId, 1,
-                [
-                    new("4100", null, null, net, 0, net, 0, source.CurrencyId, 1),
-                    onAccount
-                        ? new($"PARTNER:{source.CustomerPartnerId}", source.CustomerPartnerId, null, 0, net, 0, net, source.CurrencyId, 1)
-                        : new($"TREASURY:{treasuryId}", null, treasuryId, 0, net, 0, net, source.CurrencyId, 1),
-                ], source.BranchId, returnDate, request.SavedBy), ct);
+            {
+                journal.Add(new("4100", null, null, net, 0, net, 0, source.CurrencyId, 1));
+                journal.Add(onAccount
+                    ? new($"PARTNER:{source.CustomerPartnerId}", source.CustomerPartnerId, null, 0, net, 0, net, source.CurrencyId, 1)
+                    : new($"TREASURY:{treasuryId}", null, treasuryId, 0, net, 0, net, source.CurrencyId, 1));
+            }
+            var cost = Math.Round(returning.Sum(item => item.Quantity * item.UnitCost), 4, MidpointRounding.AwayFromZero);
+            if (cost > 0)
+            {
+                journal.Add(new(SalesService.InventoryAccount, null, null, cost, 0, cost, 0, source.CurrencyId, 1));
+                journal.Add(new(SalesService.CostOfGoodsSoldAccount, null, null, 0, cost, 0, cost, source.CurrencyId, 1));
+            }
+            if (journal.Count > 0)
+                await transactions.PostAsync(db, tx, new TransactionWriteRequest("SALES_RETURN", "SALES_RETURN", returnNo, $"Return of {source.SaleNo}", source.CurrencyId, 1, journal, source.BranchId, returnDate, request.SavedBy), ct);
 
             await tx.CommitAsync(ct);
         }
