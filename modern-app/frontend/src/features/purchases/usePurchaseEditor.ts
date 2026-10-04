@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { blankLine, type Item, type Line, type Unit } from "./purchaseModel";
+import { localDate } from '../../app/formatters'
 
 type Options = {
   ar: boolean;
@@ -14,7 +15,7 @@ type Options = {
 export function usePurchaseEditor({ ar, items, currencyId, setError, onSaved }: Options) {
   const [saving, setSaving] = useState(false);
   const [supplierId, setSupplierId] = useState(""),
-    [date, setDate] = useState(new Date().toISOString().slice(0, 10)),
+    [date, setDate] = useState(localDate()),
     [discount, setDiscount] = useState("0"),
     [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([]);

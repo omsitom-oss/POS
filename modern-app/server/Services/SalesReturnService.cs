@@ -139,7 +139,7 @@ public sealed class SalesReturnService(DbConnectionFactory factory, TransactionS
                     throw new SalesReturnException("The refund must come from an active treasury of the invoice's branch in the invoice currency.");
             }
 
-            var returnDate = (request.ReturnDate ?? DateTime.UtcNow).Date;
+            var returnDate = (request.ReturnDate ?? DateTime.Today).Date;
             if (returnDate < source.SaleDate.Date) throw new SalesReturnException("The return date cannot be before the invoice date.");
 
             var gross = returning.Sum(item => item.Quantity * item.Line.UnitPrice);

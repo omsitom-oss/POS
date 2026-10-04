@@ -16,3 +16,9 @@ export function formatDate(value: string | Date, locale: AppLocale) {
   const date = typeof value === 'string' ? new Date(`${value.slice(0, 10)}T12:00:00`) : value
   return new Intl.DateTimeFormat(locale === 'ar' ? 'ar-AE' : 'en-AE', { year: 'numeric', month: 'short', day: '2-digit' }).format(date)
 }
+
+// The shop's calendar date as YYYY-MM-DD. toISOString() would give the UTC date, which is still yesterday after local midnight.
+export function localDate(value: Date = new Date()) {
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
+}

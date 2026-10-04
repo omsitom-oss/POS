@@ -4,11 +4,12 @@ import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { Icon } from '../../components/icons'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
+import { localDate } from '../../app/formatters'
 
 type Expense = { moveNo: number; expenseNo: string; expenseDate: string; expenseAccountId: string; expenseNameEn: string; expenseNameAr: string; treasuryId: number; treasuryName: string; currencyId: number; currencyCode: string; currencySymbol: string; amount: number; description: string | null }
 type Treasury = { treasuryId: number; nameAr: string; nameEn: string; currencyId: number; currencySymbol: string; isActive: boolean }
 type Account = { accountId: number; accountCode: string; nameAr: string; nameEn: string; accountType: string; isActive: boolean }
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localDate()
 const formatAmount = (value: number | string) => (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export function ExpensesPage({ locale }: { locale: Locale }) {

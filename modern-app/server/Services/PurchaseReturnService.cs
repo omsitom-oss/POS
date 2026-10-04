@@ -121,7 +121,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             var source = (await ReadSourceAsync(db, tx, request.PurchaseId, 0, ct))!;
             var returning = Match(source, requested);
 
-            var returnDate = (request.ReturnDate ?? DateTime.UtcNow).Date;
+            var returnDate = (request.ReturnDate ?? DateTime.Today).Date;
             if (returnDate < source.PurchaseDate.Date) throw new PurchaseReturnException("The return date cannot be before the invoice date.");
 
             var gross = returning.Sum(item => item.Quantity * item.Line.UnitCost);
@@ -205,7 +205,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             Match(source, lines);
 
             // The return is dated the day it is approved, so the ledger and the reports put it in the same period.
-            var postedOn = DateTime.UtcNow.Date;
+            var postedOn = DateTime.Today;
             await using (var update = db.CreateCommand())
             {
                 update.Transaction = tx;
