@@ -22,7 +22,15 @@ export function SalesPage({ locale, branchId, userId, canOverridePrice = false }
   useLoadEffect(load)
   const subtotal = useMemo(() => lines.reduce((sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0), 0), [lines]); const total = Math.max(0, subtotal - (Number(discount) || 0))
   function resetSale() { setSaved(false); setTreasuryId(''); setSaleType('DIRECT'); setCustomerId(''); setLines([]); setDiscount('0'); setItemSearch(''); setMessage('') }
-  function selectItem(index: number, value: string) { const item = items.find(candidate => String(candidate.itemId) === value); setLines(current => current.map((line, rowIndex) => rowIndex === index ? { ...line, itemId: value, unitPrice: item?.sellPrice?.toString() ?? '0' } : line)) }
+  // An item appears once: picking one that is already on the invoice raises that line's quantity.
+  function selectItem(index: number, value: string) {
+    const item = items.find(candidate => String(candidate.itemId) === value)
+    setLines(current => {
+      const existing = value ? current.findIndex((line, rowIndex) => rowIndex !== index && line.itemId === value) : -1
+      if (existing >= 0) return current.filter((_, rowIndex) => rowIndex !== index).map((line, rowIndex) => rowIndex === (existing > index ? existing - 1 : existing) ? { ...line, quantity: String((Number(line.quantity) || 0) + (Number(current[index].quantity) || 1)) } : line)
+      return current.map((line, rowIndex) => rowIndex === index ? { ...line, itemId: value, unitPrice: item?.sellPrice?.toString() ?? '0' } : line)
+    })
+  }
   function handleItemSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') return
     event.preventDefault()

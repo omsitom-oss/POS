@@ -38,6 +38,18 @@ describe('SalesPage', () => {
     expect(screen.getByText('Total', { selector: 'strong' }).nextSibling).toHaveTextContent('30.00 AED')
   })
 
+  it('raises the quantity when the same item is picked again', async () => {
+    mockFetch(references)
+    render(<SalesPage locale="en" branchId={1} userId={7} />)
+    await openNewInvoice()
+    await scan('BRU-400')
+    await userEvent.click(screen.getByRole('button', { name: /Add item/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Choose item/ }))
+    await userEvent.click(screen.getByRole('option', { name: /Brufen/ }))
+    expect(screen.getAllByLabelText(/^Item quantity/)).toHaveLength(1)
+    expect(screen.getByLabelText('Item quantity 1')).toHaveValue(2)
+  })
+
   it('keeps the list price unless the user may change prices', async () => {
     mockFetch(references)
     const { unmount } = render(<SalesPage locale="en" branchId={1} userId={7} />)
