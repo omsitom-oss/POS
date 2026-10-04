@@ -1,6 +1,7 @@
 import type { TableColumn } from "../../components/DataTable";
 import { StatusBadge } from "../../components/shared";
 import type { Item } from "./itemModel";
+import { formatMoney } from "../../app/formatters";
 
 export function itemColumns(ar: boolean, primarySymbol: string): TableColumn<Item>[] {
   return [
@@ -45,10 +46,7 @@ export function itemColumns(ar: boolean, primarySymbol: string): TableColumn<Ite
     value: (row) => row.sellPrice,
     render: (row) => (
       <span dir="ltr">
-        {row.sellPrice.toLocaleString(undefined, {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}
+        {formatMoney(row.sellPrice, primarySymbol)}
       </span>
     ),
     sortable: true,
@@ -57,7 +55,7 @@ export function itemColumns(ar: boolean, primarySymbol: string): TableColumn<Ite
     key: "lastPurchasePrice",
     title: ar ? "آخر سعر شراء" : "Last purchase price",
     value: (row) => row.lastPurchasePrice ?? 0,
-    render: (row) => <span dir="ltr">{row.lastPurchasePrice == null ? "—" : `${row.lastPurchasePrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${primarySymbol}`}</span>,
+    render: (row) => <span dir="ltr">{row.lastPurchasePrice == null ? "—" : formatMoney(row.lastPurchasePrice, primarySymbol)}</span>,
     sortable: true,
   },
   {

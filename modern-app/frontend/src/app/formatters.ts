@@ -28,3 +28,10 @@ export function formatMoney(value: number, symbol = '') {
   const amount = value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return symbol ? `${amount} ${symbol}` : amount
 }
+
+// A calendar day for lists and panels, Latin digits in both languages: 04/10/2026.
+export function formatDay(value: string | null | undefined) {
+  if (!value) return '—'
+  const [year, month, day] = value.slice(0, 10).split('-')
+  return day && month && year ? `${day}/${month}/${year}` : value
+}

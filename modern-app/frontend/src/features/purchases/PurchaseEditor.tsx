@@ -4,6 +4,7 @@ import { PageHeader } from "../../layouts/AppLayout";
 import type { Item, Supplier } from "./purchaseModel";
 import { PurchaseItemModal } from "./PurchaseItemModal";
 import type { PurchaseEditorState } from "./usePurchaseEditor";
+import { formatMoney } from "../../app/formatters";
 
 type Props = {
   ar: boolean;
@@ -109,7 +110,7 @@ export function PurchaseEditor({ ar, editor, suppliers, items, currencySymbol, e
             <div className="purchase-lines-head">
               <h3>{ar ? "العناصر" : "Items"}</h3>
               <Button variant="primary" size="small" onClick={openItemModal}>
-                ＋ {ar ? "إضافة صنف" : "Add item"}
+                <Icon name="plus" size={18} />{ar ? "إضافة صنف" : "Add item"}
               </Button>
             </div>
             <div className="purchase-lines-table">
@@ -173,10 +174,10 @@ export function PurchaseEditor({ ar, editor, suppliers, items, currencySymbol, e
                     }
                   />
                   <strong>
-                    {(
+                    {formatMoney(
                       (Number(line.quantity) || 0) *
-                      (Number(line.unitPrice) || 0)
-                    ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      (Number(line.unitPrice) || 0),
+                    )}
                   </strong>
                   <div className="purchase-line-actions">
                     <IconButton label={ar ? "تعديل العنصر" : "Edit item"} onClick={() => void openEditItemModal(index)}><Icon name="edit" size={16} /></IconButton>
@@ -206,9 +207,7 @@ export function PurchaseEditor({ ar, editor, suppliers, items, currencySymbol, e
           <div>
             <span>{ar ? "إجمالي العناصر" : "Items total"}</span>
             <strong>
-              {subtotal.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-              })}
+              {formatMoney(subtotal)}
             </strong>
           </div>
           <div className="purchase-discount-row">
@@ -239,9 +238,7 @@ export function PurchaseEditor({ ar, editor, suppliers, items, currencySymbol, e
           <div className="purchase-grand-total">
             <span>{ar ? "الإجمالي النهائي" : "Grand total"}</span>
             <strong>
-              {grandTotal.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-              })}{" "}
+              {formatMoney(grandTotal)}{" "}
               {currencySymbol}
             </strong>
           </div>

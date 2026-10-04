@@ -16,6 +16,7 @@ import { InventoryPage } from '../features/inventory/InventoryPage'
 import { ExpensesPage } from '../features/expenses/ExpensesPage'
 import { ImportShipmentPage } from '../features/purchases/ImportShipmentPage'
 import { SalesPage } from '../features/sales/SalesPage'
+import { TillPage } from '../features/sales/TillPage'
 import { SalesReturnsPage } from '../features/returns/SalesReturnsPage'
 import { PurchaseReturnsPage } from '../features/returns/PurchaseReturnsPage'
 import { ReportsPage } from '../features/reports/ReportsPage'
@@ -127,6 +128,8 @@ function App() {
   if (session.mustChangePassword) return <ChangePasswordPage locale={locale} onChanged={() => { const next = { ...session, mustChangePassword: false }; saveSession(next); setSession(next) }} />
 
   const canOpen = (target: string) => canOpenSection(target, session.permissions)
+  if (section === 'till' && canOpen('till')) return <TillPage locale={locale} branchId={session.branchId} userId={session.userId} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} canOverridePrice={session.permissions.includes('SALES_PRICE_OVERRIDE')} onExit={() => navigate('home')} />
+
   const content = !canOpen(section)
     ? <NoAccess locale={locale} />
     : section === 'home'
@@ -173,7 +176,7 @@ function NoAccess({ locale }: { locale: Locale }) {
 }
 
 const sectionPaths: Record<string, string> = {
-  home: '/', sales: '/sales', 'sales-returns': '/sales/returns', 'purchase-returns': '/purchases/returns', reports: '/reports', settings: '/settings',
+  home: '/', till: '/till', sales: '/sales', 'sales-returns': '/sales/returns', 'purchase-returns': '/purchases/returns', reports: '/reports', settings: '/settings',
   users: '/users', items: '/items', accounts: '/accounts', 'treasury-transfer': '/accounts/transfer', receipts: '/receipts', expenses: '/expenses',
   purchases: '/purchases', 'purchase-import': '/purchases/import', inventory: '/inventory', customers: '/customers', 'new-customer': '/customers',
 }

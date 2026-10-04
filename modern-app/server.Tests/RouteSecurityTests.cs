@@ -79,7 +79,7 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
         { "POST", "/api/currencies" }, { "PUT", "/api/currencies/rates" }, { "PUT", "/api/currencies/1/rate" },
         { "POST", "/api/branches" }, { "POST", "/api/treasuries" }, { "POST", "/api/banks" }, { "PUT", "/api/approvals/INVENTORY_DISPOSAL" },
         { "POST", "/api/items" }, { "PUT", "/api/items/1" }, { "POST", "/api/partners" },
-        { "GET", "/api/sales" }, { "POST", "/api/sales" },
+        { "GET", "/api/sales" }, { "GET", "/api/sales/1" }, { "POST", "/api/sales" },
         { "GET", "/api/sales-returns" }, { "GET", "/api/sales-returns/1" }, { "GET", "/api/sales-returns/invoices" }, { "GET", "/api/sales-returns/invoices/1" }, { "POST", "/api/sales-returns" },
         { "GET", "/api/purchase-returns" }, { "GET", "/api/purchase-returns/invoices/1" }, { "POST", "/api/purchase-returns" }, { "POST", "/api/purchase-returns/1/approve" }, { "POST", "/api/purchase-returns/1/reject" },
         { "GET", "/api/purchases" }, { "GET", "/api/purchases/1" }, { "POST", "/api/purchases" }, { "DELETE", "/api/purchases/1" },

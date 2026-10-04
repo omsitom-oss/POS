@@ -2,6 +2,7 @@ import { TableFooter } from "../../components/shared";
 import { usePagination } from "../../components/usePagination";
 import type { Locale } from "../../layouts/AppLayout";
 import type { ItemPriceHistory } from "./itemModel";
+import { formatMoney } from "../../app/formatters";
 
 type Props = {
   locale: Locale;
@@ -58,9 +59,9 @@ export function ItemPriceHistoryPanel({ locale, hidden, isNew, priceHistory, pri
                     <td>
                       {entry.previousPrice == null
                         ? "—"
-                        : `${entry.previousPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${primarySymbol}`}
+                        : formatMoney(entry.previousPrice, primarySymbol)}
                     </td>
-                    <td>{`${entry.newPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${primarySymbol}`}</td>
+                    <td>{formatMoney(entry.newPrice, primarySymbol)}</td>
                     <td>
                       {entry.userName ??
                         (entry.userId

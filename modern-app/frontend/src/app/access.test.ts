@@ -14,6 +14,8 @@ describe('canOpenSection', () => {
     expect(canOpenSection('sales', ['SALES_CREATE'])).toBe(true)
     expect(canOpenSection('sales', ['SALES_VIEW'])).toBe(true)
     expect(canOpenSection('sales', ['INVENTORY_VIEW'])).toBe(false)
+    expect(canOpenSection('till', ['SALES_CREATE'])).toBe(true)
+    expect(canOpenSection('till', ['INVENTORY_VIEW'])).toBe(false)
     expect(canOpenSection('treasury-transfer', ['TREASURY_VIEW'])).toBe(false)
     expect(canOpenSection('purchase-import', ['PURCHASES_VIEW'])).toBe(true)
   })

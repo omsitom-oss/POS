@@ -63,7 +63,7 @@ describe('PurchaseReturnsPage', () => {
     mockFetch(routes)
     render(<PurchaseReturnsPage locale="en" canApprove />)
     await screen.findByText('PR-1-00003')
-    await userEvent.click(screen.getByRole('tab', { name: 'Posted' }))
+    await userEvent.click(screen.getByRole('radio', { name: /Posted/ }))
     expect(screen.queryByText('PR-1-00003')).not.toBeInTheDocument()
     expect(screen.getByText('PR-1-00002')).toBeInTheDocument()
   })

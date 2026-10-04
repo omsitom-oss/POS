@@ -2,6 +2,7 @@ import { Button, FormField, Modal, Select, TextInput } from "../../components/sh
 import { Icon } from "../../components/icons";
 import { formatAmount, type Item } from "./purchaseModel";
 import type { PurchaseEditorState } from "./usePurchaseEditor";
+import { formatMoney } from "../../app/formatters";
 
 /** Dialog that adds a line to the purchase invoice, or edits an existing one. */
 export function PurchaseItemModal({ ar, editor, items, currencySymbol }: { ar: boolean; editor: PurchaseEditorState; items: Item[]; currencySymbol: string }) {
@@ -136,13 +137,10 @@ export function PurchaseItemModal({ ar, editor, items, currencySymbol }: { ar: b
             <Icon name="sum" size={18} />
             <TextInput
               readOnly
-              value={(
+              value={formatMoney(
                 (Number(itemDraft.quantity) || 0) *
-                (Number(itemDraft.unitPrice) || 0)
-              ).toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+                (Number(itemDraft.unitPrice) || 0),
+              )}
             />
             <span className="purchase-currency">{currencySymbol}</span>
           </div>

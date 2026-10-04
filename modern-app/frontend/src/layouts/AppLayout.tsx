@@ -20,6 +20,7 @@ type NavGroup = { en: string; ar: string; items: NavItem[] }
 const navGroups: NavGroup[] = [
   { en: '', ar: '', items: [{ id: 'home', en: 'Home', ar: 'الرئيسية', icon: 'dashboard' }] },
   { en: 'Sell', ar: 'البيع', items: [
+    { id: 'till', en: 'Till', ar: 'نقطة البيع', icon: 'barcode' },
     { id: 'sales', en: 'Sales', ar: 'المبيعات', icon: 'sales' },
     { id: 'sales-returns', en: 'Sales returns', ar: 'مرتجعات المبيعات', icon: 'swap' },
   ] },

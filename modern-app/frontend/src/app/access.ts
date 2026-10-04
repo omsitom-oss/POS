@@ -3,6 +3,7 @@
 // A section that is neither open to everyone nor listed here stays closed, so a new page must be added on purpose.
 const openToEveryone = new Set(['home', 'items'])
 const sectionPermissions: Record<string, readonly string[]> = {
+  till: ['SALES_CREATE', 'SALES_VIEW'],
   sales: ['SALES_CREATE', 'SALES_VIEW'],
   'sales-returns': ['SALES_RETURN', 'SALES_VIEW'],
   inventory: ['INVENTORY_VIEW'],
