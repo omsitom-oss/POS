@@ -167,6 +167,29 @@ public sealed class SqlServerFinanceTests(SqlServerApiFixture fixture) : IClassF
         Assert.Equal(17, await StockAsync(item));
     }
 
+    [Fact]
+    public async Task A_till_cannot_pay_out_more_than_it_holds()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        await fixture.Database.ExecuteAsync($"""
+            IF NOT EXISTS (SELECT 1 FROM dbo.Treasuries WHERE TreasuryCode=N'T-EMPTY')
+                INSERT dbo.Treasuries(TreasuryCode,NameAr,NameEn,CurrencyId,BranchId) VALUES(N'T-EMPTY',N'خزنة فارغة',N'Empty till',{refs.Currency},{fixture.BranchA});
+            """, "empty till", Ct);
+        var till = await fixture.Database.CountAsync("SELECT TreasuryId FROM dbo.Treasuries WHERE TreasuryCode=N'T-EMPTY'", Ct);
+        Task<HttpResponseMessage> Receipt(string type, decimal amount) =>
+            Admin.PostAsJsonAsync("/api/receipts", new { type, partnerId = refs.Supplier, treasuryId = till, amount, exchangeRate = 1m, branchId = fixture.BranchA }, Ct);
+
+        var overdraw = await Receipt("PAYMENT", 5m);
+        Assert.Equal(HttpStatusCode.BadRequest, overdraw.StatusCode);
+        Assert.Contains("Empty till has only 0 P", await overdraw.Content.ReadAsStringAsync(Ct));
+
+        Assert.Equal(HttpStatusCode.Created, (await Receipt("RECEIPT", 30m)).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await Receipt("PAYMENT", 30m)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Receipt("PAYMENT", 0.01m)).StatusCode);
+        Assert.Equal(0m, await fixture.Database.ScalarAsync<decimal>($"SELECT SUM(ForeignDebit-ForeignCredit) FROM dbo.Transactions WHERE TreasuryId={till}", Ct));
+    }
+
     private sealed record Refs(int Currency, int Treasury, int Supplier);
 
     private async Task<Refs> SeedAsync()

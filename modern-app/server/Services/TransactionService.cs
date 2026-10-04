@@ -105,6 +105,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
             ids.Add(Convert.ToInt64(await insert.ExecuteScalarAsync(ct)));
         }
 
+        await EnsureTreasuriesStayCoveredAsync(db, tx, lines, ct);
         return new TransactionWriteResult(moveNo, transactionDate, request.CurrencyId, request.ExchangeRate, ids);
     }
 
@@ -206,6 +207,24 @@ public sealed class TransactionService(DbConnectionFactory factory)
             if (!await reader.ReadAsync(ct)) throw new TransactionException("Treasury was not found.", 404);
             if (!reader.GetBoolean(1)) throw new TransactionException("An inactive treasury cannot be used in a transaction.");
             if (reader.GetInt32(0) != (line.CurrencyId ?? request.CurrencyId)) throw new TransactionException("The transaction line currency must match the treasury currency.");
+        }
+    }
+
+    // A till or bank account may not be paid out below zero. NextMoveNoAsync holds an exclusive lock on the journal
+    // until the caller commits, so no other payment can slip in between this check and the commit.
+    private static async Task EnsureTreasuriesStayCoveredAsync(DbConnection db, DbTransaction tx, IReadOnlyList<TransactionLineRequest> lines, CancellationToken ct)
+    {
+        var outflows = lines.Where(line => line.TreasuryId.HasValue).GroupBy(line => line.TreasuryId!.Value)
+            .Select(group => (TreasuryId: group.Key, Net: group.Sum(line => line.ForeignDebit - line.ForeignCredit))).Where(item => item.Net < 0);
+        foreach (var (treasuryId, net) in outflows)
+        {
+            await using var command = db.CreateCommand(); command.Transaction = tx;
+            command.CommandText = "SELECT t.NameEn,c.Symbol,COALESCE((SELECT SUM(x.ForeignDebit-x.ForeignCredit) FROM dbo.Transactions x WHERE x.TreasuryId=t.TreasuryId),0) FROM dbo.Treasuries t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.TreasuryId=@id";
+            Add(command, "@id", treasuryId, DbType.Int32);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) continue;
+            var balance = reader.GetDecimal(2);
+            if (balance < 0) throw new TransactionException($"{reader.GetString(0)} has only {balance - net:0.##} {reader.GetString(1)}, which is not enough to pay out {-net:0.##} {reader.GetString(1)}.");
         }
     }
 
