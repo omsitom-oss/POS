@@ -13,10 +13,10 @@
   --font-helper: 13px;
   --font-label: 14px;
   --font-body: 15px;
-  --font-table: 14px;
+  --font-table: 15px;
   --font-button: 14px;
   --font-section: 18px;
-  --font-title: 22px;
+  --font-title: 30px;
   --line-body: 1.55;
 
   /* Spacing (4px grid) */
@@ -29,26 +29,26 @@
   --space-7: 32px;
 
   /* Shape */
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
   --radius-pill: 999px;
 
   /* Sizing */
-  --control-height: 40px;
-  --row-compact: 40px;
-  --row-comfortable: 48px;
+  --control-height: 44px;
+  --row-compact: 46px;
+  --row-comfortable: 54px;
   --sidebar-width: 232px;
   --sidebar-collapsed-width: 76px;
   --topbar-height: 56px;
 
   /* Neutral surfaces */
-  --background: #f2f4f5;
+  --background: #e8eeec;
   --surface: #ffffff;
   --surface-elevated: #ffffff;
   --surface-sunken: #ebeff1;
   --surface-hover: #eff3f4;
-  --border: #dde3e6;
+  --border: #d3dcd9;
   --border-strong: #c6d0d5;
   --text-primary: #0f1d26;
   --text-secondary: #455663;
@@ -56,9 +56,9 @@
   --text-inverse: #ffffff;
 
   /* Brand */
-  --primary: #0a7a55;
+  --primary: #00765a;
   --primary-hover: #086747;
-  --primary-soft: #e1f3eb;
+  --primary-soft: #d6efe5;
   --primary-strong: #06573c;
   --on-brand: #ffffff;
   --focus-ring: color-mix(in srgb, var(--primary) 45%, transparent);
@@ -81,7 +81,7 @@
   --hover: var(--surface-hover);
   --selected: #e4f4ec;
   --input-background: #ffffff;
-  --table-header: #f5f7f8;
+  --table-header: #e3ece8;
   --backdrop: rgb(10 22 33 / 45%);
 
   /* Buttons */
@@ -112,15 +112,15 @@
   --tooltip-border: #2a3c4d;
 
   /* Navigation: a dark rail in both themes frames the work area. */
-  --nav-background: #0f1c25;
-  --nav-border: #1f303b;
-  --nav-text: #b3c2cc;
+  --nav-background: #06352a;
+  --nav-border: #0f4a3b;
+  --nav-text: #b9d9cd;
   --nav-text-strong: #ffffff;
-  --nav-text-muted: #75899a;
-  --nav-hover: #182a35;
-  --nav-selected: #1d3542;
+  --nav-text-muted: #7fae9d;
+  --nav-hover: #0c4638;
+  --nav-selected: #0f5c49;
   --nav-selected-text: #ffffff;
-  --nav-accent: #3fcf96;
+  --nav-accent: #7af0c0;
 
   /* Elevation */
   --shadow-xs: 0 1px 2px rgb(16 32 48 / 5%);
@@ -198,10 +198,10 @@
   --tooltip-text: #0f1d26;
   --tooltip-border: #c6d2da;
 
-  --nav-background: #091015;
-  --nav-border: #18242c;
-  --nav-hover: #142028;
-  --nav-selected: #17272f;
+  --nav-background: #06201a;
+  --nav-border: #0e3328;
+  --nav-hover: #0b2d24;
+  --nav-selected: #0f3d31;
 
   --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
   --shadow-sm: 0 1px 3px rgb(0 0 0 / 35%);
