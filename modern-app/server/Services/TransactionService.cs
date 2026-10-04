@@ -54,52 +54,58 @@ public sealed class TransactionService(DbConnectionFactory factory)
 
     public async Task<TransactionWriteResult> SaveAsync(TransactionWriteRequest request, CancellationToken ct)
     {
-        Validate(request);
-        var lines = request.Lines!;
-        var transactionDate = (request.TransactionDate ?? DateTime.UtcNow).Date;
-
         await using var db = await OpenAsync(ct);
         await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
         {
-            var branchId = request.BranchId ?? await ReadDefaultBranchAsync(db, tx, ct);
-            await ValidateReferencesAsync(db, tx, request, branchId, lines, ct);
-            var moveNo = await NextMoveNoAsync(db, tx, ct);
-            var ids = new List<long>(lines.Count);
-
-            foreach (var line in lines)
-            {
-                await using var insert = db.CreateCommand();
-                insert.Transaction = tx;
-                insert.CommandText = "INSERT INTO dbo.Transactions (BranchId,TransactionDate,MoveNo,TransactionType,Pattern,AccountId,PartnerId,TreasuryId,RefNo,Description,Debit,Credit,ForeignDebit,ForeignCredit,CurrencyId,ExchangeRate,SavedBy) OUTPUT INSERTED.TransactionId VALUES (@branch,@date,@move,@type,@pattern,@account,@partner,@treasury,@ref,@description,@debit,@credit,@foreignDebit,@foreignCredit,@currency,@rate,@savedBy)";
-                Add(insert, "@branch", branchId, DbType.Int32);
-                Add(insert, "@date", transactionDate, DbType.Date);
-                Add(insert, "@move", moveNo, DbType.Int32);
-                Add(insert, "@type", request.TransactionType!.Trim(), DbType.String, 50);
-                Add(insert, "@pattern", NullIfBlank(request.Pattern), DbType.String, 50);
-                Add(insert, "@account", line.AccountId!.Trim(), DbType.String, 50);
-                Add(insert, "@partner", line.PartnerId, DbType.Int32);
-                Add(insert, "@treasury", line.TreasuryId, DbType.Int32);
-                Add(insert, "@ref", NullIfBlank(request.RefNo), DbType.String, 50);
-                Add(insert, "@description", NullIfBlank(request.Description), DbType.String, 250);
-                AddDecimal(insert, "@debit", line.Debit, 19, 4);
-                AddDecimal(insert, "@credit", line.Credit, 19, 4);
-                AddDecimal(insert, "@foreignDebit", line.ForeignDebit, 19, 4);
-                AddDecimal(insert, "@foreignCredit", line.ForeignCredit, 19, 4);
-                Add(insert, "@currency", line.CurrencyId ?? request.CurrencyId, DbType.Int32);
-                AddDecimal(insert, "@rate", line.ExchangeRate ?? request.ExchangeRate, 19, 8);
-                Add(insert, "@savedBy", request.SavedBy, DbType.Int32);
-                ids.Add(Convert.ToInt64(await insert.ExecuteScalarAsync(ct)));
-            }
-
+            var result = await PostAsync(db, tx, request, ct);
             await tx.CommitAsync(ct);
-            return new TransactionWriteResult(moveNo, transactionDate, request.CurrencyId, request.ExchangeRate, ids);
+            return result;
         }
         catch
         {
             await tx.RollbackAsync(ct);
             throw;
         }
+    }
+
+    // Writes the journal inside the caller's transaction, so a document and its journal commit or roll back together.
+    public async Task<TransactionWriteResult> PostAsync(DbConnection db, DbTransaction tx, TransactionWriteRequest request, CancellationToken ct)
+    {
+        Validate(request);
+        var lines = request.Lines!;
+        var transactionDate = (request.TransactionDate ?? DateTime.UtcNow).Date;
+        var branchId = request.BranchId ?? await ReadDefaultBranchAsync(db, tx, ct);
+        await ValidateReferencesAsync(db, tx, request, branchId, lines, ct);
+        var moveNo = await NextMoveNoAsync(db, tx, ct);
+        var ids = new List<long>(lines.Count);
+
+        foreach (var line in lines)
+        {
+            await using var insert = db.CreateCommand();
+            insert.Transaction = tx;
+            insert.CommandText = "INSERT INTO dbo.Transactions (BranchId,TransactionDate,MoveNo,TransactionType,Pattern,AccountId,PartnerId,TreasuryId,RefNo,Description,Debit,Credit,ForeignDebit,ForeignCredit,CurrencyId,ExchangeRate,SavedBy) OUTPUT INSERTED.TransactionId VALUES (@branch,@date,@move,@type,@pattern,@account,@partner,@treasury,@ref,@description,@debit,@credit,@foreignDebit,@foreignCredit,@currency,@rate,@savedBy)";
+            Add(insert, "@branch", branchId, DbType.Int32);
+            Add(insert, "@date", transactionDate, DbType.Date);
+            Add(insert, "@move", moveNo, DbType.Int32);
+            Add(insert, "@type", request.TransactionType!.Trim(), DbType.String, 50);
+            Add(insert, "@pattern", NullIfBlank(request.Pattern), DbType.String, 50);
+            Add(insert, "@account", line.AccountId!.Trim(), DbType.String, 50);
+            Add(insert, "@partner", line.PartnerId, DbType.Int32);
+            Add(insert, "@treasury", line.TreasuryId, DbType.Int32);
+            Add(insert, "@ref", NullIfBlank(request.RefNo), DbType.String, 50);
+            Add(insert, "@description", NullIfBlank(request.Description), DbType.String, 250);
+            AddDecimal(insert, "@debit", line.Debit, 19, 4);
+            AddDecimal(insert, "@credit", line.Credit, 19, 4);
+            AddDecimal(insert, "@foreignDebit", line.ForeignDebit, 19, 4);
+            AddDecimal(insert, "@foreignCredit", line.ForeignCredit, 19, 4);
+            Add(insert, "@currency", line.CurrencyId ?? request.CurrencyId, DbType.Int32);
+            AddDecimal(insert, "@rate", line.ExchangeRate ?? request.ExchangeRate, 19, 8);
+            Add(insert, "@savedBy", request.SavedBy, DbType.Int32);
+            ids.Add(Convert.ToInt64(await insert.ExecuteScalarAsync(ct)));
+        }
+
+        return new TransactionWriteResult(moveNo, transactionDate, request.CurrencyId, request.ExchangeRate, ids);
     }
 
     private static async Task<int> ReadDefaultBranchAsync(DbConnection db, DbTransaction tx, CancellationToken ct)

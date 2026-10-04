@@ -11,8 +11,10 @@ public static class PermissionCodes
     public const string PartnersManage = "PARTNERS_MANAGE";
     public const string SalesView = "SALES_VIEW";
     public const string SalesCreate = "SALES_CREATE";
+    public const string SalesReturn = "SALES_RETURN";
     public const string PurchasesView = "PURCHASES_VIEW";
     public const string PurchasesManage = "PURCHASES_MANAGE";
+    public const string PurchaseReturn = "PURCHASE_RETURN";
     public const string PurchaseReturnApprove = "PURCHASE_RETURN_APPROVE";
     public const string InventoryView = "INVENTORY_VIEW";
     public const string InventoryDispose = "INVENTORY_DISPOSE";
@@ -26,7 +28,7 @@ public static class PermissionCodes
     public static readonly IReadOnlyList<string> All =
     [
         UserManagement, SettingsManage, ExchangeRatesEdit, ItemsManage, PartnersManage,
-        SalesView, SalesCreate, PurchasesView, PurchasesManage, PurchaseReturnApprove,
+        SalesView, SalesCreate, SalesReturn, PurchasesView, PurchasesManage, PurchaseReturn, PurchaseReturnApprove,
         InventoryView, InventoryDispose, InventoryApprove, TreasuryView, TreasuryManage,
         ReportsView, AllBranches, ManagementAccess,
     ];

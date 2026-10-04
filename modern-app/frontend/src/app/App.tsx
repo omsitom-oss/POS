@@ -16,6 +16,8 @@ import { InventoryPage } from '../features/inventory/InventoryPage'
 import { ExpensesPage } from '../features/expenses/ExpensesPage'
 import { ImportPurchasePage } from '../features/purchases/ImportPurchasePage'
 import { SalesPage } from '../features/sales/SalesPage'
+import { SalesReturnsPage } from '../features/returns/SalesReturnsPage'
+import { PurchaseReturnsPage } from '../features/returns/PurchaseReturnsPage'
 import { ReportsPage } from '../features/reports/ReportsPage'
 import { clearSession, readSession, saveSession, sessionExpiredEvent } from './session'
 
@@ -62,7 +64,7 @@ function App() {
   function navigate(section: string) {
     const nextSection = section
     setSection(nextSection)
-    const path = nextSection === 'sales' ? '/sales' : nextSection === 'reports' ? '/reports' : nextSection === 'settings' ? '/settings' : nextSection === 'users' ? '/users' : nextSection === 'items' ? '/items' : nextSection === 'accounts' ? '/accounts' : nextSection === 'treasury-transfer' ? '/accounts/transfer' : nextSection === 'receipts' ? '/receipts' : nextSection === 'expenses' ? '/expenses' : nextSection === 'purchases' ? '/purchases' : nextSection === 'purchase-import' ? '/purchases/import' : nextSection === 'inventory' ? '/inventory' : nextSection.startsWith('settings:') ? settingsPath(nextSection) : nextSection.startsWith('lab:') ? '/design-lab' : nextSection === 'customers' || nextSection.startsWith('customer:') ? '/customers' : '/settings'
+    const path = nextSection === 'sales' ? '/sales' : nextSection === 'sales-returns' ? '/sales/returns' : nextSection === 'purchase-returns' ? '/purchases/returns' : nextSection === 'reports' ? '/reports' : nextSection === 'settings' ? '/settings' : nextSection === 'users' ? '/users' : nextSection === 'items' ? '/items' : nextSection === 'accounts' ? '/accounts' : nextSection === 'treasury-transfer' ? '/accounts/transfer' : nextSection === 'receipts' ? '/receipts' : nextSection === 'expenses' ? '/expenses' : nextSection === 'purchases' ? '/purchases' : nextSection === 'purchase-import' ? '/purchases/import' : nextSection === 'inventory' ? '/inventory' : nextSection.startsWith('settings:') ? settingsPath(nextSection) : nextSection.startsWith('lab:') ? '/design-lab' : nextSection === 'customers' || nextSection.startsWith('customer:') ? '/customers' : '/settings'
     if (window.location.pathname !== path) window.history.pushState(null, '', path)
   }
 
@@ -102,6 +104,10 @@ function App() {
     ? <AccountsPage locale={locale} />
     : section === 'treasury-transfer'
     ? <TreasuryTransferPage locale={locale} />
+    : section === 'sales-returns'
+    ? <SalesReturnsPage locale={locale} />
+    : section === 'purchase-returns'
+    ? <PurchaseReturnsPage locale={locale} canApprove={session.permissions.includes('PURCHASE_RETURN_APPROVE')} />
     : section === 'sales'
     ? <SalesPage locale={locale} branchId={session.branchId} userId={session.userId} />
     : section === 'reports'
@@ -132,6 +138,8 @@ function App() {
 function sectionFromPath(path: string) {
   if (path === '/design-lab') return 'lab:overview'
   if (path === '/sales') return 'sales'
+  if (path === '/sales/returns') return 'sales-returns'
+  if (path === '/purchases/returns') return 'purchase-returns'
   if (path === '/reports') return 'reports'
   if (path === '/customers') return 'customers'
   if (path === '/users') return 'users'

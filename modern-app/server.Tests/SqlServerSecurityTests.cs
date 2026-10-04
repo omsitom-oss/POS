@@ -83,6 +83,43 @@ public sealed class SqlServerApiFixture : IAsyncLifetime
         AdminToken = signedIn.GetProperty("token").GetString()!;
     }
 
+    // The scratch database, for tests that check rows the API wrote.
+    internal SqlServerMigrationTests.ScratchDatabase Database => database!;
+
+    public HttpClient Client(string token)
+    {
+        var client = Api.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
+    public async Task<(HttpStatusCode Status, JsonElement Body)> LoginAsync(string userName, string password)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var response = await Api.CreateClient().PostAsJsonAsync("/api/auth/login", new { identifier = userName, password }, ct);
+        return (response.StatusCode, await response.Content.ReadFromJsonAsync<JsonElement>(ct));
+    }
+
+    // Creates a user with the given permissions through the API and returns a signed-in client.
+    public async Task<(HttpClient Client, int UserId, string Password)> CreateUserAsync(string userName, int branchId, params string[] permissions)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = Client(AdminToken);
+        var allPermissions = await admin.GetFromJsonAsync<JsonElement[]>("/api/permissions", ct);
+        var ids = allPermissions!.Where(p => permissions.Contains(p.GetProperty("code").GetString())).Select(p => p.GetProperty("permissionId").GetInt32()).ToArray();
+        var role = await (await admin.PostAsJsonAsync("/api/roles", new { name = $"role-{userName}", permissionIds = ids }, ct)).Content.ReadFromJsonAsync<JsonElement>(ct);
+        var created = await admin.PostAsJsonAsync("/api/users", new { userName, branchId, roleIds = new[] { role.GetProperty("roleId").GetInt32() }, password = "User-Pass-123" }, ct);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var user = await created.Content.ReadFromJsonAsync<JsonElement>(ct);
+        // An admin-set password must be changed at first sign-in.
+        var (_, login) = await LoginAsync(userName, "User-Pass-123");
+        Assert.True(login.GetProperty("mustChangePassword").GetBoolean());
+        var change = await Client(login.GetProperty("token").GetString()!).PostAsJsonAsync("/api/auth/change-password", new { currentPassword = "User-Pass-123", newPassword = "Changed-Pass-1" }, ct);
+        Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
+        var (_, fresh) = await LoginAsync(userName, "Changed-Pass-1");
+        return (Client(fresh.GetProperty("token").GetString()!), user.GetProperty("userId").GetInt32(), "Changed-Pass-1");
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Api is not null) await Api.DisposeAsync();
@@ -96,39 +133,10 @@ public sealed class SqlServerSecurityTests(SqlServerApiFixture fixture) : IClass
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
     private static void SkipWithoutSqlServer() => Assert.SkipWhen(string.IsNullOrWhiteSpace(SqlServerApiFixture.ServerConnectionString), "POS_TEST_SQLSERVER is not set.");
 
-    private async Task<(HttpStatusCode Status, JsonElement Body)> LoginAsync(string userName, string password)
-    {
-        var response = await fixture.Api.CreateClient().PostAsJsonAsync("/api/auth/login", new { identifier = userName, password }, Ct);
-        return (response.StatusCode, await response.Content.ReadFromJsonAsync<JsonElement>(Ct));
-    }
-
-    private HttpClient Client(string token)
-    {
-        var client = fixture.Api.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return client;
-    }
-
+    private Task<(HttpStatusCode Status, JsonElement Body)> LoginAsync(string userName, string password) => fixture.LoginAsync(userName, password);
+    private HttpClient Client(string token) => fixture.Client(token);
     private Task<HttpClient> AdminAsync() => Task.FromResult(Client(fixture.AdminToken));
-
-    // Creates a user with the given permissions through the API and returns a signed-in client.
-    private async Task<(HttpClient Client, int UserId, string Password)> UserAsync(string userName, int branchId, params string[] permissions)
-    {
-        var admin = await AdminAsync();
-        var allPermissions = await admin.GetFromJsonAsync<JsonElement[]>("/api/permissions", Ct);
-        var ids = allPermissions!.Where(p => permissions.Contains(p.GetProperty("code").GetString())).Select(p => p.GetProperty("permissionId").GetInt32()).ToArray();
-        var role = await (await admin.PostAsJsonAsync("/api/roles", new { name = $"role-{userName}", permissionIds = ids }, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
-        var created = await admin.PostAsJsonAsync("/api/users", new { userName, branchId, roleIds = new[] { role.GetProperty("roleId").GetInt32() }, password = "User-Pass-123" }, Ct);
-        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        var user = await created.Content.ReadFromJsonAsync<JsonElement>(Ct);
-        // An admin-set password must be changed at first sign-in.
-        var (_, login) = await LoginAsync(userName, "User-Pass-123");
-        Assert.True(login.GetProperty("mustChangePassword").GetBoolean());
-        var change = await Client(login.GetProperty("token").GetString()!).PostAsJsonAsync("/api/auth/change-password", new { currentPassword = "User-Pass-123", newPassword = "Changed-Pass-1" }, Ct);
-        Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
-        var (_, fresh) = await LoginAsync(userName, "Changed-Pass-1");
-        return (Client(fresh.GetProperty("token").GetString()!), user.GetProperty("userId").GetInt32(), "Changed-Pass-1");
-    }
+    private Task<(HttpClient Client, int UserId, string Password)> UserAsync(string userName, int branchId, params string[] permissions) => fixture.CreateUserAsync(userName, branchId, permissions);
 
     [Fact]
     public async Task Bootstrap_admin_holds_every_permission()
