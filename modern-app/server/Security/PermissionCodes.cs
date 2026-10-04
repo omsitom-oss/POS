@@ -12,6 +12,7 @@ public static class PermissionCodes
     public const string SalesView = "SALES_VIEW";
     public const string SalesCreate = "SALES_CREATE";
     public const string SalesReturn = "SALES_RETURN";
+    public const string SalesPriceOverride = "SALES_PRICE_OVERRIDE";
     public const string PurchasesView = "PURCHASES_VIEW";
     public const string PurchasesManage = "PURCHASES_MANAGE";
     public const string PurchaseReturn = "PURCHASE_RETURN";
@@ -29,7 +30,7 @@ public static class PermissionCodes
     public static readonly IReadOnlyList<string> All =
     [
         UserManagement, SettingsManage, ExchangeRatesEdit, ItemsManage, PartnersManage,
-        SalesView, SalesCreate, SalesReturn, PurchasesView, PurchasesManage, PurchaseReturn, PurchaseReturnApprove,
+        SalesView, SalesCreate, SalesReturn, SalesPriceOverride, PurchasesView, PurchasesManage, PurchaseReturn, PurchaseReturnApprove,
         InventoryView, InventoryDispose, InventoryApprove, TreasuryView, TreasuryManage, JournalPost,
         ReportsView, AllBranches, ManagementAccess,
     ];
