@@ -295,6 +295,10 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
         Assert.Equal(12m, item.GetProperty("cost").GetDecimal());
         Assert.Equal(2700m, after.GetProperty("payments").GetProperty("cash").GetDecimal() - before.GetProperty("payments").GetProperty("cash").GetDecimal());
         Assert.Equal(after.GetProperty("summary").GetProperty("salesTotal").GetDecimal(), after.GetProperty("days").EnumerateArray().Sum(day => day.GetProperty("sales").GetDecimal()));
+
+        // A huge range is cut to three years so the day series stays small.
+        var wide = await Admin.GetFromJsonAsync<JsonElement>($"/api/reports/overview?branchId={fixture.BranchA}&from=0001-01-01", Ct);
+        Assert.Equal(1096, wide.GetProperty("days").GetArrayLength());
     }
 
     [Fact]

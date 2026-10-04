@@ -6,6 +6,7 @@ namespace ElitePos.LocalService.Services;
 
 public sealed class ReportService(DbConnectionFactory factory)
 {
+    public const int MaxDays=1096;
     public async Task<ReportSummary> GetSummaryAsync(int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         var start=(from??DateTime.Today.AddDays(-30)).Date;var end=(to??DateTime.Today).Date;
@@ -16,6 +17,8 @@ public sealed class ReportService(DbConnectionFactory factory)
     public async Task<ReportOverview> GetOverviewAsync(int? branchId, DateTime? from, DateTime? to, CancellationToken ct)
     {
         var start=(from??DateTime.Today.AddDays(-30)).Date;var end=(to??DateTime.Today).Date;if(end<start)(start,end)=(end,start);
+        // The day series has a row per day, so a report covers at most three years back from its end date.
+        if((end-start).Days>MaxDays-1)start=end.AddDays(-(MaxDays-1));
         var length=(end-start).Days+1;
         var summary=await GetSummaryAsync(branchId,start,end,ct);var previous=await GetSummaryAsync(branchId,start.AddDays(-length),start.AddDays(-1),ct);
         await using var db=factory.CreateConnection();await db.OpenAsync(ct);

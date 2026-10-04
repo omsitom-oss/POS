@@ -70,7 +70,11 @@ export function netSales(summary: ReportSummary) { return summary.salesTotal - s
 // One CSV with a block per section. The byte-order mark lets Excel open Arabic names correctly.
 export function reportCsv(report: ReportOverview, ar: boolean, branchName: string) {
   const s = report.summary
-  const cell = (value: string | number) => { const text = typeof value === 'number' ? value.toFixed(2) : value; return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text }
+  // Text that starts like a formula gets a leading quote, so a name such as "=1+1" opens in Excel as text, not as a formula.
+  const cell = (value: string | number) => {
+    const text = typeof value === 'number' ? value.toFixed(2) : /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+  }
   const rows: Array<Array<string | number>> = [
     [ar ? 'تقرير المبيعات والأرباح' : 'Sales and profit report'],
     [ar ? 'الفترة' : 'Period', s.from.slice(0, 10), s.to.slice(0, 10)],

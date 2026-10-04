@@ -40,5 +40,6 @@ describe('reportModel', () => {
     expect(csv).toContain('Net profit,250.00')
     expect(csv).toContain('A1,"Item, large",2.00,900.00,600.00,300.00')
     expect(csv).toContain('5100,Salaries,50.00')
+    expect(reportCsv({ ...report, topItems: [{ ...report.topItems[0], itemCode: '=HYPERLINK(1)', nameEn: '-x' }] }, false, '@Main')).toContain("'=HYPERLINK(1),'-x,2.00")
   })
 })
