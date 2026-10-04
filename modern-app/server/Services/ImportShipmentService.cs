@@ -133,14 +133,14 @@ public sealed class ImportShipmentService(DbConnectionFactory factory, Transacti
     }
 
     // Editing a cost voids it with a reversing entry and records the corrected cost, so the ledger keeps both.
-    public async Task<ImportShipmentDetail?> UpdateCostAsync(long id, long costId, ImportCostWriteRequest request, int? savedBy, CancellationToken ct)
+    public async Task<ImportShipmentDetail?> UpdateCostAsync(long id, long costId, ImportCostWriteRequest request, bool canUseTreasury, int? savedBy, CancellationToken ct)
     {
         await using var db = await OpenAsync(ct);
         await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
         {
             var shipment = await LockDraftAsync(db, tx, id, ct);
-            if (shipment is null || !await VoidCostAsync(db, tx, id, costId, shipment.Value.Invoice, shipment.Value.Branch, savedBy, ct)) { await tx.RollbackAsync(ct); return null; }
+            if (shipment is null || !await VoidCostAsync(db, tx, id, costId, shipment.Value.Invoice, shipment.Value.Branch, canUseTreasury, savedBy, ct)) { await tx.RollbackAsync(ct); return null; }
             await InsertCostAsync(db, tx, id, shipment.Value.Invoice, shipment.Value.Branch, request, savedBy, ct);
             await tx.CommitAsync(ct);
         }
@@ -149,14 +149,16 @@ public sealed class ImportShipmentService(DbConnectionFactory factory, Transacti
         return await GetAsync(id, ct);
     }
 
-    public async Task<ImportShipmentDetail?> RemoveCostAsync(long id, long costId, int? savedBy, CancellationToken ct)
+    // A cost paid from a treasury can only be edited or removed by someone allowed to move till money, because
+    // voiding it puts the money back on the till's books.
+    public async Task<ImportShipmentDetail?> RemoveCostAsync(long id, long costId, bool canUseTreasury, int? savedBy, CancellationToken ct)
     {
         await using var db = await OpenAsync(ct);
         await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
         {
             var shipment = await LockDraftAsync(db, tx, id, ct);
-            if (shipment is null || !await VoidCostAsync(db, tx, id, costId, shipment.Value.Invoice, shipment.Value.Branch, savedBy, ct)) { await tx.RollbackAsync(ct); return null; }
+            if (shipment is null || !await VoidCostAsync(db, tx, id, costId, shipment.Value.Invoice, shipment.Value.Branch, canUseTreasury, savedBy, ct)) { await tx.RollbackAsync(ct); return null; }
             await tx.CommitAsync(ct);
         }
         catch (TransactionException ex) { await tx.RollbackAsync(ct); throw new ImportShipmentException(ex.Message, ex.StatusCode); }
@@ -335,8 +337,15 @@ public sealed class ImportShipmentService(DbConnectionFactory factory, Transacti
         ], branch, null, savedBy), ct);
     }
 
-    private async Task<bool> VoidCostAsync(DbConnection db, DbTransaction tx, long id, long costId, string invoice, int branch, int? savedBy, CancellationToken ct)
+    private async Task<bool> VoidCostAsync(DbConnection db, DbTransaction tx, long id, long costId, string invoice, int branch, bool canUseTreasury, int? savedBy, CancellationToken ct)
     {
+        await using (var payee = Command(db, tx, "SELECT PayeeType FROM dbo.PurchaseAdditionalCosts WITH (UPDLOCK) WHERE PurchaseCostId=@cost AND PurchaseId=@id AND VoidedAt IS NULL"))
+        {
+            Add(payee, "@cost", costId, DbType.Int64);
+            Add(payee, "@id", id, DbType.Int64);
+            if (await payee.ExecuteScalarAsync(ct) is not string payeeType) return false;
+            if (payeeType == "TREASURY" && !canUseTreasury) throw new ImportShipmentException("Changing a cost paid from a treasury needs the treasury permission.", 403);
+        }
         await using (var voided = Command(db, tx, "UPDATE dbo.PurchaseAdditionalCosts SET VoidedAt=SYSUTCDATETIME() WHERE PurchaseCostId=@cost AND PurchaseId=@id AND VoidedAt IS NULL"))
         {
             Add(voided, "@cost", costId, DbType.Int64);
@@ -555,7 +564,11 @@ public sealed class ImportShipmentService(DbConnectionFactory factory, Transacti
 
         var rate = detail.ExchangeRateToBase;
         var costsBase = costs.Sum(cost => cost.BaseAmount);
-        var goodsBases = raw.Select(line => line.Quantity * line.Price * rate).ToArray();
+        // Rounded the same way as the opening journal (4 places on the shipment total), with the last line taking the
+        // remainder, so the received stock value equals what goods in transit holds.
+        var goodsTotalBase = decimal.Round(raw.Sum(line => line.Quantity * line.Price) * rate, 4);
+        var goodsBases = raw.Select(line => decimal.Round(line.Quantity * line.Price * rate, 4)).ToArray();
+        if (goodsBases.Length > 0) goodsBases[^1] = goodsTotalBase - goodsBases[..^1].Sum();
         var allocated = Allocate(raw.Select((line, i) => (goodsBases[i], line.BaseQuantity)).ToList(), costsBase, detail.AllocationMethod);
         var received = detail.Status == "POSTED";
         var lines = raw.Select((line, i) =>

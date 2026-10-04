@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using ElitePos.LocalService.Security;
 using ElitePos.LocalService.Services;
 
 namespace ElitePos.LocalService.Tests;
@@ -103,6 +104,25 @@ public sealed class SqlServerImportTests(SqlServerApiFixture fixture) : IClassFi
         var response = await AddCostAsync(id, new { costType = "CUSTOMS", amount = balance + 1m, currencyId = refs.Primary, exchangeRateToBase = 1m, payeeType = "TREASURY", payeeTreasuryId = refs.Till });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(balance, await TillBalanceAsync(refs));
+    }
+
+    [Fact]
+    public async Task Only_a_treasury_user_can_change_a_cost_paid_from_a_till()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        await FundTillAsync(refs, 30m);
+        var item = await NewItemAsync("IM-PERM");
+        var id = Id(await CreateAsync(Shipment(refs, refs.Foreign, Rate, [Line(item, 1m, 5m)])));
+        var added = await (await AddCostAsync(id, new { costType = "CUSTOMS", amount = 30m, currencyId = refs.Primary, exchangeRateToBase = 1m, payeeType = "TREASURY", payeeTreasuryId = refs.Till })).Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var cost = added.GetProperty("costs")[0].GetProperty("costId").GetInt64();
+        var balance = await TillBalanceAsync(refs);
+        var (clerk, _, _) = await fixture.CreateUserAsync("import-clerk", fixture.BranchA, PermissionCodes.PurchasesView, PermissionCodes.PurchasesManage);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await clerk.DeleteAsync($"/api/imports/{id}/costs/{cost}", Ct)).StatusCode);
+        var moved = await clerk.PutAsJsonAsync($"/api/imports/{id}/costs/{cost}", new { costType = "CUSTOMS", amount = 30m, currencyId = refs.Primary, exchangeRateToBase = 1m, payeeType = "ACCOUNT", payeeAccountCode = "2200" }, Ct);
+        Assert.Equal(HttpStatusCode.Forbidden, moved.StatusCode);
         Assert.Equal(balance, await TillBalanceAsync(refs));
     }
 

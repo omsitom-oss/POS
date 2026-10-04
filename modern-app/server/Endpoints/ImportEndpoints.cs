@@ -31,9 +31,9 @@ public static class ImportEndpoints
         write.MapPost("/{id:long}/costs", (long id, ImportCostWriteRequest request, ClaimsPrincipal user, ImportShipmentService service, CancellationToken ct) =>
             CanPay(user, request) is { } denied ? Task.FromResult(denied) : Run(id, user, service, ct, () => service.AddCostAsync(id, request, user.GetUserId(), ct)));
         write.MapPut("/{id:long}/costs/{costId:long}", (long id, long costId, ImportCostWriteRequest request, ClaimsPrincipal user, ImportShipmentService service, CancellationToken ct) =>
-            CanPay(user, request) is { } denied ? Task.FromResult(denied) : Run(id, user, service, ct, () => service.UpdateCostAsync(id, costId, request, user.GetUserId(), ct)));
+            CanPay(user, request) is { } denied ? Task.FromResult(denied) : Run(id, user, service, ct, () => service.UpdateCostAsync(id, costId, request, user.HasPermission(PermissionCodes.TreasuryManage), user.GetUserId(), ct)));
         write.MapDelete("/{id:long}/costs/{costId:long}", (long id, long costId, ClaimsPrincipal user, ImportShipmentService service, CancellationToken ct) =>
-            Run(id, user, service, ct, () => service.RemoveCostAsync(id, costId, user.GetUserId(), ct)));
+            Run(id, user, service, ct, () => service.RemoveCostAsync(id, costId, user.HasPermission(PermissionCodes.TreasuryManage), user.GetUserId(), ct)));
         write.MapPost("/{id:long}/receive", (long id, ClaimsPrincipal user, ImportShipmentService service, CancellationToken ct) =>
             Run(id, user, service, ct, () => service.ReceiveAsync(id, user.GetUserId(), ct)));
         write.MapPost("/{id:long}/cancel", async (long id, ClaimsPrincipal user, ImportShipmentService service, CancellationToken ct) =>
