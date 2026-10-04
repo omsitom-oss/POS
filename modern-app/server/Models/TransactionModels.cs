@@ -21,7 +21,9 @@ public sealed record TransactionWriteRequest(
     IReadOnlyList<TransactionLineRequest>? Lines,
     int? BranchId = null,
     DateTime? TransactionDate = null,
-    int? SavedBy = null);
+    int? SavedBy = null,
+    // Primary-currency units per one unit of CurrencyId for this document; when null the latest stored rate is used.
+    decimal? BaseRate = null);
 
 public sealed record TransactionWriteResult(
     int MoveNo,

@@ -31,22 +31,24 @@ public sealed class TreasuryTransferService(DbConnectionFactory factory, Transac
         else if (Math.Abs(request.DestinationAmount * request.ExchangeRate - request.SourceAmount) > 0.01m)
             throw new TreasuryTransferException("The source amount must equal the destination amount multiplied by the exchange rate.");
 
+        // Into a primary-currency till, the amount received is the transfer's primary value, so the entered rate wins over the stored one.
+        decimal? baseRate = destination.IsPrimary && source.CurrencyId != destination.CurrencyId ? request.DestinationAmount / request.SourceAmount : null;
         var transaction = await transactions.SaveAsync(new TransactionWriteRequest(
             "TREASURY_TRANSFER", "TRANSFER", null, request.Description, source.CurrencyId, 1,
             [
                 new TransactionLineRequest($"TREASURY:{destination.TreasuryId}", null, destination.TreasuryId, request.SourceAmount, 0, request.DestinationAmount, 0, destination.CurrencyId, request.ExchangeRate),
                 new TransactionLineRequest($"TREASURY:{source.TreasuryId}", null, source.TreasuryId, 0, request.SourceAmount, 0, request.SourceAmount, source.CurrencyId, 1),
-            ], request.BranchId, date, request.SavedBy), ct);
+            ], request.BranchId, date, request.SavedBy, baseRate), ct);
         return new TreasuryTransferResult(transaction.MoveNo, date, source.TreasuryId, destination.TreasuryId, source.CurrencyId, destination.CurrencyId, request.SourceAmount, request.DestinationAmount, request.ExchangeRate, transaction);
     }
 
-    private static async Task<(int TreasuryId, int CurrencyId)> ReadTreasuryAsync(DbConnection db, int treasuryId, int branchId, CancellationToken ct)
+    private static async Task<(int TreasuryId, int CurrencyId, bool IsPrimary)> ReadTreasuryAsync(DbConnection db, int treasuryId, int branchId, CancellationToken ct)
     {
-        await using var command = db.CreateCommand(); command.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id AND BranchId=@branch"; Add(command, "@id", treasuryId, DbType.Int32); Add(command, "@branch", branchId, DbType.Int32);
+        await using var command = db.CreateCommand(); command.CommandText = "SELECT t.CurrencyId,t.IsActive,c.IsPrimary FROM dbo.Treasuries t JOIN dbo.Currencies c ON c.CurrencyId=t.CurrencyId WHERE t.TreasuryId=@id AND t.BranchId=@branch"; Add(command, "@id", treasuryId, DbType.Int32); Add(command, "@branch", branchId, DbType.Int32);
         await using var reader = await command.ExecuteReaderAsync(ct);
         if (!await reader.ReadAsync(ct)) throw new TreasuryTransferException("Treasury was not found.", 404);
         if (!reader.GetBoolean(1)) throw new TreasuryTransferException("Inactive treasuries cannot be used.");
-        return (treasuryId, reader.GetInt32(0));
+        return (treasuryId, reader.GetInt32(0), reader.GetBoolean(2));
     }
 
     private static async Task<decimal> ReadBalanceAsync(DbConnection db, int treasuryId, CancellationToken ct)

@@ -78,12 +78,12 @@ public sealed class SqlServerCostTests(SqlServerApiFixture fixture) : IClassFixt
     }
 
     [Fact]
-    public async Task Migration_053_rewrites_stored_costs_at_batch_cost()
+    public async Task Migration_054_rewrites_stored_costs_at_batch_cost()
     {
         SkipWithoutSqlServer();
         await using var database = await SqlServerMigrationTests.ScratchDatabase.CreateAsync(SqlServerApiFixture.ServerConnectionString!, Ct);
         var migrations = PosMigrationRunner.GetMigrations();
-        foreach (var migration in migrations.Where(m => m.Version < 53))
+        foreach (var migration in migrations.Where(m => m.Version < 54))
             await database.ExecuteAsync(MigrationSql.Read(migration.Name), $"POS {migration.Version:D3}", Ct);
 
         // A purchase posted directly at 10 and 5 with a 20% discount, stored at the list price; a sale of 3 that took
@@ -116,7 +116,7 @@ public sealed class SqlServerCostTests(SqlServerApiFixture fixture) : IClassFixt
             INSERT dbo.StockMovements(BranchId,ItemId,SalesReturnId,SaleLineId,PurchaseLineId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@return,@saleLine,@late,1,5,N'POSTED');
             """, "stock at old costs", Ct);
 
-        await database.ExecuteAsync(MigrationSql.Read(migrations.Single(m => m.Version == 53).Name), "POS 053", Ct);
+        await database.ExecuteAsync(MigrationSql.Read(migrations.Single(m => m.Version == 54).Name), "POS 054", Ct);
 
         // SOON costs 10 x 0.8 = 8 and LATE 5 x 0.8 = 4. The sale line costs (2 x 8 + 1 x 4) / 3 and the return 4.
         Assert.Equal(6.6667m, await database.ScalarAsync<decimal>("SELECT UnitCost FROM dbo.SaleLines", Ct));
