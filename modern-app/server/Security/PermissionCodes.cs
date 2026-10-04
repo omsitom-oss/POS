@@ -21,6 +21,7 @@ public static class PermissionCodes
     public const string InventoryApprove = "INVENTORY_APPROVE";
     public const string TreasuryView = "TREASURY_VIEW";
     public const string TreasuryManage = "TREASURY_MANAGE";
+    public const string ChequesManage = "CHEQUES_MANAGE";
     public const string JournalPost = "JOURNAL_POST";
     public const string ReportsView = "REPORTS_VIEW";
     public const string AllBranches = "ALL_BRANCHES";
@@ -30,7 +31,7 @@ public static class PermissionCodes
     [
         UserManagement, SettingsManage, ExchangeRatesEdit, ItemsManage, PartnersManage,
         SalesView, SalesCreate, SalesReturn, PurchasesView, PurchasesManage, PurchaseReturn, PurchaseReturnApprove,
-        InventoryView, InventoryDispose, InventoryApprove, TreasuryView, TreasuryManage, JournalPost,
+        InventoryView, InventoryDispose, InventoryApprove, TreasuryView, TreasuryManage, ChequesManage, JournalPost,
         ReportsView, AllBranches, ManagementAccess,
     ];
 }

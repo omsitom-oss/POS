@@ -7,6 +7,7 @@ import { CurrencyRatesDialog } from '../features/currencies/CurrencyRatesDialog'
 import { UsersPage } from '../features/users/UsersPage'
 import { ItemsPage } from '../features/items/ItemsPage'
 import { ReceiptsPage } from '../features/receipts/ReceiptsPage'
+import { ChequesPage } from '../features/cheques/ChequesPage'
 import { AccountsPage } from '../features/accounts/AccountsPage'
 import { TreasuryTransferPage } from '../features/accounts/TreasuryTransferPage'
 import { PurchasesPage } from '../features/purchases/PurchasesPage'
@@ -64,7 +65,7 @@ function App() {
   function navigate(section: string) {
     const nextSection = section
     setSection(nextSection)
-    const path = nextSection === 'sales' ? '/sales' : nextSection === 'sales-returns' ? '/sales/returns' : nextSection === 'purchase-returns' ? '/purchases/returns' : nextSection === 'reports' ? '/reports' : nextSection === 'settings' ? '/settings' : nextSection === 'users' ? '/users' : nextSection === 'items' ? '/items' : nextSection === 'accounts' ? '/accounts' : nextSection === 'treasury-transfer' ? '/accounts/transfer' : nextSection === 'receipts' ? '/receipts' : nextSection === 'expenses' ? '/expenses' : nextSection === 'purchases' ? '/purchases' : nextSection === 'purchase-import' ? '/purchases/import' : nextSection === 'inventory' ? '/inventory' : nextSection.startsWith('settings:') ? settingsPath(nextSection) : nextSection.startsWith('lab:') ? '/design-lab' : nextSection === 'customers' || nextSection.startsWith('customer:') ? '/customers' : '/settings'
+    const path = nextSection === 'sales' ? '/sales' : nextSection === 'sales-returns' ? '/sales/returns' : nextSection === 'purchase-returns' ? '/purchases/returns' : nextSection === 'reports' ? '/reports' : nextSection === 'settings' ? '/settings' : nextSection === 'users' ? '/users' : nextSection === 'items' ? '/items' : nextSection === 'accounts' ? '/accounts' : nextSection === 'treasury-transfer' ? '/accounts/transfer' : nextSection === 'receipts' ? '/receipts' : nextSection === 'cheques' ? '/cheques' : nextSection === 'expenses' ? '/expenses' : nextSection === 'purchases' ? '/purchases' : nextSection === 'purchase-import' ? '/purchases/import' : nextSection === 'inventory' ? '/inventory' : nextSection.startsWith('settings:') ? settingsPath(nextSection) : nextSection.startsWith('lab:') ? '/design-lab' : nextSection === 'customers' || nextSection.startsWith('customer:') ? '/customers' : '/settings'
     if (window.location.pathname !== path) window.history.pushState(null, '', path)
   }
 
@@ -120,6 +121,8 @@ function App() {
     ? <InventoryPage locale={locale} branchId={session.branchId} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} userId={session.userId} />
     : section === 'receipts'
     ? <ReceiptsPage locale={locale} />
+    : section === 'cheques'
+    ? <ChequesPage locale={locale} canManage={session.permissions.includes('CHEQUES_MANAGE')} />
     : section === 'expenses'
     ? <ExpensesPage locale={locale} />
     : section === 'items'
@@ -147,6 +150,7 @@ function sectionFromPath(path: string) {
   if (path === '/accounts') return 'accounts'
   if (path === '/accounts/transfer') return 'treasury-transfer'
   if (path === '/receipts') return 'receipts'
+  if (path === '/cheques') return 'cheques'
   if (path === '/expenses') return 'expenses'
   if (path === '/purchases/import') return 'purchase-import'
   if (path === '/purchases') return 'purchases'

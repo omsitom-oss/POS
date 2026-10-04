@@ -96,6 +96,7 @@ builder.Services.AddSingleton<ItemService>();
 builder.Services.AddSingleton<InventoryService>();
 builder.Services.AddSingleton<TransactionService>();
 builder.Services.AddSingleton<ReceiptService>();
+builder.Services.AddSingleton<ChequeService>();
 builder.Services.AddSingleton<ExpenseService>();
 builder.Services.AddSingleton<TreasuryTransferService>();
 builder.Services.AddPosSecurity(builder.Configuration);
@@ -154,6 +155,7 @@ api.MapItemEndpoints();
 api.MapInventoryEndpoints();
 api.MapTransactionEndpoints();
 api.MapReceiptEndpoints();
+api.MapChequeEndpoints();
 api.MapExpenseEndpoints();
 api.MapTreasuryTransferEndpoints();
 

@@ -78,7 +78,10 @@ public sealed record ReceiptWriteRequest(
     int? BranchId = null,
     int? SavedBy = null,
     int? PartnerCurrencyId = null,
-    decimal? PartnerAmount = null);
+    decimal? PartnerAmount = null,
+    string? Method = null,
+    string? ChequeNo = null,
+    DateTime? ChequeDueDate = null);
 
 public sealed record ReceiptWriteResult(
     string ReceiptNo,
@@ -91,7 +94,9 @@ public sealed record ReceiptWriteResult(
     decimal PartnerAmount,
     decimal LocalAmount,
     decimal ExchangeRate,
-    TransactionWriteResult Transaction);
+    TransactionWriteResult Transaction,
+    string Method = "CASH",
+    int? ChequeId = null);
 
 public sealed record ReceiptListItem(
     int MoveNo,
@@ -111,7 +116,12 @@ public sealed record ReceiptListItem(
     string PartnerCurrencySymbol,
     decimal ExchangeRate,
     string? Reason,
-    string? Description);
+    string? Description,
+    string Method = "CASH",
+    int? ChequeId = null,
+    string? ChequeNo = null,
+    DateTime? ChequeDueDate = null,
+    string? ChequeStatus = null);
 
 public sealed record ExpenseWriteRequest(
     string? ExpenseAccountId,
