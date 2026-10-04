@@ -12,7 +12,8 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
 {
     // Quantity of a purchase line already returned or waiting for approval. @exclude leaves out the return being approved.
     private const string ReservedPerLine = "(SELECT COALESCE(SUM(rl.Quantity),0) FROM dbo.PurchaseReturnLines rl JOIN dbo.PurchaseReturns r ON r.PurchaseReturnId=rl.PurchaseReturnId WHERE rl.PurchaseLineId=l.PurchaseLineId AND r.Status IN (N'PENDING',N'POSTED') AND r.PurchaseReturnId<>@exclude)";
-    private const string DisposedPerLine = "(SELECT COALESCE(SUM(d.Quantity),0) FROM dbo.InventoryRequests d WHERE d.PurchaseLineId=l.PurchaseLineId AND d.RequestType=N'INVENTORY_DISPOSAL' AND d.Status IN (N'PENDING',N'APPROVED'))";
+    // Stock still in the batch (sales, returns and disposals already left it), less what other pending returns and pending disposals will take.
+    private const string BatchFreePerLine = "((SELECT COALESCE(SUM(bm.Quantity),0) FROM dbo.StockMovements bm WHERE bm.PurchaseLineId=l.PurchaseLineId AND bm.PostingStatus=N'POSTED')-(SELECT COALESCE(SUM(rl.Quantity),0) FROM dbo.PurchaseReturnLines rl JOIN dbo.PurchaseReturns r ON r.PurchaseReturnId=rl.PurchaseReturnId WHERE rl.PurchaseLineId=l.PurchaseLineId AND r.Status=N'PENDING' AND r.PurchaseReturnId<>@exclude)-(SELECT COALESCE(SUM(d.Quantity),0) FROM dbo.InventoryRequests d WHERE d.PurchaseLineId=l.PurchaseLineId AND d.RequestType=N'INVENTORY_DISPOSAL' AND d.Status=N'PENDING'))";
     // Branch stock of the item less what other pending returns will take out of it.
     private const string ItemAvailable = "(SELECT COALESCE(SUM(sm.Quantity),0) FROM dbo.StockMovements sm WHERE sm.BranchId=p.BranchId AND sm.ItemId=l.ItemId AND sm.PostingStatus=N'POSTED') - (SELECT COALESCE(SUM(rl.Quantity),0) FROM dbo.PurchaseReturnLines rl JOIN dbo.PurchaseReturns r ON r.PurchaseReturnId=rl.PurchaseReturnId WHERE r.BranchId=p.BranchId AND rl.ItemId=l.ItemId AND r.Status=N'PENDING' AND r.PurchaseReturnId<>@exclude)";
     private const string IsImport = "(p.PurchaseType=N'IMPORT' OR p.Description LIKE N'IMPORT:%')";
@@ -29,7 +30,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             JOIN dbo.Currencies c ON c.CurrencyId=p.CurrencyId
             WHERE p.Status=N'POSTED' AND NOT {IsImport} AND (@branch IS NULL OR p.BranchId=@branch)
               AND (@from IS NULL OR p.PurchaseDate>=@from) AND (@to IS NULL OR p.PurchaseDate<=@to)
-              AND EXISTS (SELECT 1 FROM dbo.PurchaseLines l WHERE l.PurchaseId=p.PurchaseId AND l.Quantity>{ReservedPerLine}+{DisposedPerLine} AND {ItemAvailable}>0)
+              AND EXISTS (SELECT 1 FROM dbo.PurchaseLines l WHERE l.PurchaseId=p.PurchaseId AND l.Quantity>{ReservedPerLine} AND {BatchFreePerLine}>0 AND {ItemAvailable}>0)
               AND (@search IS NULL OR p.InvoiceNo LIKE @search OR partner.PartnerName LIKE @search
                    OR EXISTS (SELECT 1 FROM dbo.PurchaseLines l JOIN dbo.Items i ON i.ItemId=l.ItemId WHERE l.PurchaseId=p.PurchaseId AND (i.NameEn LIKE @search OR i.NameAr LIKE @search OR i.ItemCode LIKE @search OR l.BatchNo LIKE @search)))
             ORDER BY p.PurchaseDate DESC,p.PurchaseId DESC
@@ -287,7 +288,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
         await using (var stock = db.CreateCommand())
         {
             stock.Transaction = tx;
-            stock.CommandText = "INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseReturnId,Quantity,UnitCost,PostingStatus) SELECT @branch,ItemId,PurchaseReturnId,-Quantity,UnitCost,N'POSTED' FROM dbo.PurchaseReturnLines WHERE PurchaseReturnId=@id";
+            stock.CommandText = "INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseReturnId,PurchaseLineId,Quantity,UnitCost,PostingStatus) SELECT @branch,ItemId,PurchaseReturnId,PurchaseLineId,-Quantity,UnitCost,N'POSTED' FROM dbo.PurchaseReturnLines WHERE PurchaseReturnId=@id";
             Add(stock, "@branch", source.BranchId, DbType.Int32);
             Add(stock, "@id", returnId, DbType.Int64);
             await stock.ExecuteNonQueryAsync(ct);
@@ -329,7 +330,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
         }
         await using var lines = db.CreateCommand();
         lines.Transaction = tx;
-        lines.CommandText = $"SELECT l.PurchaseLineId,l.ItemId,i.ItemCode,i.NameAr,i.NameEn,u.ValueEn,l.BatchNo,l.ExpiryDate,l.Quantity,{ReservedPerLine},{DisposedPerLine},{ItemAvailable},l.UnitPrice FROM dbo.PurchaseLines l JOIN dbo.Purchases p ON p.PurchaseId=l.PurchaseId JOIN dbo.Items i ON i.ItemId=l.ItemId LEFT JOIN dbo.Settings u ON u.SettingId=l.UnitSettingId WHERE l.PurchaseId=@id ORDER BY l.PurchaseLineId";
+        lines.CommandText = $"SELECT l.PurchaseLineId,l.ItemId,i.ItemCode,i.NameAr,i.NameEn,u.ValueEn,l.BatchNo,l.ExpiryDate,l.Quantity,{ReservedPerLine},{BatchFreePerLine},{ItemAvailable},l.UnitPrice FROM dbo.PurchaseLines l JOIN dbo.Purchases p ON p.PurchaseId=l.PurchaseId JOIN dbo.Items i ON i.ItemId=l.ItemId LEFT JOIN dbo.Settings u ON u.SettingId=l.UnitSettingId WHERE l.PurchaseId=@id ORDER BY l.PurchaseLineId";
         Add(lines, "@id", purchaseId, DbType.Int64);
         Add(lines, "@exclude", excludeReturnId, DbType.Int64);
         var items = new List<PurchaseReturnSourceLine>();
@@ -338,7 +339,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
         {
             var purchased = lineReader.GetDecimal(8);
             var returned = lineReader.GetDecimal(9);
-            var batchLeft = purchased - returned - lineReader.GetDecimal(10);
+            var batchLeft = lineReader.GetDecimal(10);
             var itemAvailable = Math.Max(0, lineReader.GetDecimal(11));
             items.Add(new(lineReader.GetInt64(0), lineReader.GetInt64(1), lineReader.GetString(2), lineReader.GetString(3), lineReader.GetString(4), lineReader.IsDBNull(5) ? null : lineReader.GetString(5), lineReader.IsDBNull(6) ? null : lineReader.GetString(6), lineReader.IsDBNull(7) ? null : lineReader.GetDateTime(7),
                 purchased, returned, itemAvailable, Math.Max(0, Math.Min(batchLeft, itemAvailable)), lineReader.GetDecimal(12)));
