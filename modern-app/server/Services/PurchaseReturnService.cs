@@ -292,12 +292,16 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             Add(stock, "@id", returnId, DbType.Int64);
             await stock.ExecuteNonQueryAsync(ct);
         }
-        if (total > 0)
-            await transactions.PostAsync(db, tx, new TransactionWriteRequest("PURCHASE_RETURN", "PURCHASE_RETURN", returnNo, $"Return of {source.InvoiceNo}", source.CurrencyId, 1,
-            [
-                new("2100", source.SupplierPartnerId, null, total, 0, total, 0, source.CurrencyId, 1),
-                new("1300", null, null, 0, total, 0, total, source.CurrencyId, 1),
-            ], source.BranchId, date, savedBy), ct);
+        if (total <= 0) return;
+        // The return is valued at the invoice's own exchange rate, as the purchase was.
+        await using var rate = db.CreateCommand(); rate.Transaction = tx; rate.CommandText = "SELECT ExchangeRateToBase FROM dbo.Purchases WHERE PurchaseId=@id";
+        var idParameter = rate.CreateParameter(); idParameter.ParameterName = "@id"; idParameter.DbType = DbType.Int64; idParameter.Value = source.PurchaseId; rate.Parameters.Add(idParameter);
+        var baseRate = await rate.ExecuteScalarAsync(ct) is { } value and not DBNull ? Convert.ToDecimal(value) : (decimal?)null;
+        await transactions.PostAsync(db, tx, new TransactionWriteRequest("PURCHASE_RETURN", "PURCHASE_RETURN", returnNo, $"Return of {source.InvoiceNo}", source.CurrencyId, 1,
+        [
+            new("2100", source.SupplierPartnerId, null, total, 0, total, 0, source.CurrencyId, 1),
+            new("1300", null, null, 0, total, 0, total, source.CurrencyId, 1),
+        ], source.BranchId, date, savedBy, baseRate is > 0 ? baseRate : null), ct);
     }
 
     private static async Task<(long PurchaseId, string ReturnNo, decimal Total)?> LockPendingAsync(DbConnection db, DbTransaction tx, long returnId, CancellationToken ct)
