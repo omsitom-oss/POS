@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button, EmptyState, ErrorState, FormField, IconButton, LoadingState, Modal, SearchInput, Select, StatusBadge, TextInput } from "../../components/shared";
+import { useLoadEffect } from "../../components/useLoadEffect";
 import { PageHeader, type Locale } from "../../layouts/AppLayout";
 import { Icon } from "../../components/icons";
 
@@ -12,8 +13,8 @@ export function InventoryPage({ locale, branchId, branchName, userId }: { locale
   const [batchItem, setBatchItem] = useState<InventoryItem | null>(null), [batches, setBatches] = useState<Batch[]>([]), [batchLoading, setBatchLoading] = useState(false);
   const [disposalBatch, setDisposalBatch] = useState<{ item: InventoryItem; batch: Batch } | null>(null), [disposalQty, setDisposalQty] = useState(""), [disposalReason, setDisposalReason] = useState(""), [disposalSaving, setDisposalSaving] = useState(false);
 
-  async function load() { setLoading(true); setError(""); try { const response = await fetch(`/api/inventory?branchId=${branchId}`); if (!response.ok) throw new Error(await response.text()); setRows(await response.json() as InventoryItem[]); } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? "تعذر تحميل المخزون." : "Could not load inventory.")); } finally { setLoading(false); } }
-  useEffect(() => { void load(); }, [branchId]);
+  const load = useCallback(async () => { setLoading(true); setError(""); try { const response = await fetch(`/api/inventory?branchId=${branchId}`); if (!response.ok) throw new Error(await response.text()); setRows(await response.json() as InventoryItem[]); } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? "تعذر تحميل المخزون." : "Could not load inventory.")); } finally { setLoading(false); } }, [ar, branchId])
+  useLoadEffect(load);
   const visible = useMemo(() => { const query = search.trim().toLocaleLowerCase(); return query ? rows.filter(item => [item.itemCode, item.nameAr, item.nameEn].some(value => value.toLocaleLowerCase().includes(query))) : rows; }, [rows, search]);
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
   const pageRows = visible.slice(page * pageSize, (page + 1) * pageSize);
