@@ -5,7 +5,7 @@ using ElitePos.LocalService.Models;
 
 namespace ElitePos.LocalService.Services;
 
-// Purchase returns against a posted local purchase invoice. Each return is its own document (PR-<branch>-<number>).
+// Purchase returns against a posted purchase invoice or a received import shipment. Each return is its own document (PR-<branch>-<number>).
 // When the PURCHASE_RETURN approval setting is on, a return waits as PENDING (its quantities stay reserved) until
 // someone with PURCHASE_RETURN_APPROVE approves it; only then does stock leave and the supplier payable go down.
 public sealed class PurchaseReturnService(DbConnectionFactory factory, TransactionService transactions)
@@ -17,6 +17,11 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
     // Branch stock of the item less what other pending returns will take out of it.
     private const string ItemAvailable = "(SELECT COALESCE(SUM(sm.Quantity),0) FROM dbo.StockMovements sm WHERE sm.BranchId=p.BranchId AND sm.ItemId=l.ItemId AND sm.PostingStatus=N'POSTED') - (SELECT COALESCE(SUM(rl.Quantity),0) FROM dbo.PurchaseReturnLines rl JOIN dbo.PurchaseReturns r ON r.PurchaseReturnId=rl.PurchaseReturnId WHERE r.BranchId=p.BranchId AND rl.ItemId=l.ItemId AND r.Status=N'PENDING' AND r.PurchaseReturnId<>@exclude)";
     private const string IsImport = "(p.PurchaseType=N'IMPORT' OR p.Description LIKE N'IMPORT:%')";
+    // What the supplier credits per base unit, in the invoice currency. A received import line keeps its landed cost in
+    // UnitPrice, so its supplier price comes from what was entered on the invoice.
+    private const string ReturnPrice = $"CASE WHEN {IsImport} AND l.OriginalUnitPrice IS NOT NULL AND l.Quantity>0 THEN COALESCE(l.OriginalQuantity,l.Quantity)*l.OriginalUnitPrice/l.Quantity ELSE l.UnitPrice END";
+    // Import costs carried by returned goods (freight, customs) are not refunded by the supplier, so they are expensed.
+    private const string ImportCostsWrittenOff = "5100";
 
     public async Task<IReadOnlyList<ReturnableInvoice>> GetInvoicesAsync(int? branchId, string? search, DateTime? from, DateTime? to, CancellationToken ct)
     {
@@ -28,7 +33,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             FROM dbo.Purchases p
             JOIN dbo.Partners partner ON partner.PartnerId=p.SupplierPartnerId
             JOIN dbo.Currencies c ON c.CurrencyId=p.CurrencyId
-            WHERE p.Status=N'POSTED' AND NOT {IsImport} AND (@branch IS NULL OR p.BranchId=@branch)
+            WHERE p.Status=N'POSTED' AND (@branch IS NULL OR p.BranchId=@branch)
               AND (@from IS NULL OR p.PurchaseDate>=@from) AND (@to IS NULL OR p.PurchaseDate<=@to)
               AND EXISTS (SELECT 1 FROM dbo.PurchaseLines l WHERE l.PurchaseId=p.PurchaseId AND l.Quantity>{ReservedPerLine} AND {BatchFreePerLine}>0 AND {ItemAvailable}>0)
               AND (@search IS NULL OR p.InvoiceNo LIKE @search OR partner.PartnerName LIKE @search
@@ -112,12 +117,11 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
             await using (var lockPurchase = db.CreateCommand())
             {
                 lockPurchase.Transaction = tx;
-                lockPurchase.CommandText = $"SELECT p.Status,CASE WHEN {IsImport} THEN 1 ELSE 0 END FROM dbo.Purchases p WITH (UPDLOCK,HOLDLOCK) WHERE p.PurchaseId=@id";
+                lockPurchase.CommandText = "SELECT p.Status FROM dbo.Purchases p WITH (UPDLOCK,HOLDLOCK) WHERE p.PurchaseId=@id";
                 Add(lockPurchase, "@id", request.PurchaseId, DbType.Int64);
                 await using var reader = await lockPurchase.ExecuteReaderAsync(ct);
                 if (!await reader.ReadAsync(ct)) throw new PurchaseReturnException("The purchase invoice was not found.", 404);
                 if (reader.GetString(0) != "POSTED") throw new PurchaseReturnException("Only received (posted) purchase invoices can be returned.");
-                if (reader.GetInt32(1) == 1) throw new PurchaseReturnException("Import shipments cannot be returned from this screen yet.");
             }
             var source = (await ReadSourceAsync(db, tx, request.PurchaseId, 0, ct))!;
             var returning = Match(source, requested);
@@ -283,26 +287,68 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
     }
 
     // Stock leaves the branch at the invoice cost and the supplier payable goes down: the reverse of the purchase journal.
+    // For an import, stock leaves at its landed cost, the supplier is credited only the goods in the invoice currency at
+    // the shipment's rate, and the import costs those goods carried are expensed.
     private async Task PostAsync(DbConnection db, DbTransaction tx, long returnId, string returnNo, PurchaseReturnSource source, decimal total, DateTime date, int? savedBy, CancellationToken ct)
     {
+        decimal? baseRate; bool isImport;
+        await using (var head = db.CreateCommand())
+        {
+            head.Transaction = tx;
+            head.CommandText = $"SELECT p.ExchangeRateToBase,CASE WHEN {IsImport} THEN 1 ELSE 0 END FROM dbo.Purchases p WHERE p.PurchaseId=@id";
+            Add(head, "@id", source.PurchaseId, DbType.Int64);
+            await using var reader = await head.ExecuteReaderAsync(ct);
+            await reader.ReadAsync(ct);
+            baseRate = reader.IsDBNull(0) ? null : reader.GetDecimal(0);
+            isImport = reader.GetInt32(1) == 1;
+        }
+        decimal stockValue;
         await using (var stock = db.CreateCommand())
         {
             stock.Transaction = tx;
-            stock.CommandText = "INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseReturnId,PurchaseLineId,Quantity,UnitCost,PostingStatus) SELECT @branch,ItemId,PurchaseReturnId,PurchaseLineId,-Quantity,UnitCost,N'POSTED' FROM dbo.PurchaseReturnLines WHERE PurchaseReturnId=@id";
+            stock.CommandText = isImport
+                ? "INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseReturnId,PurchaseLineId,Quantity,UnitCost,PostingStatus) OUTPUT -INSERTED.Quantity*INSERTED.UnitCost SELECT @branch,rl.ItemId,rl.PurchaseReturnId,rl.PurchaseLineId,-rl.Quantity,pl.UnitPrice,N'POSTED' FROM dbo.PurchaseReturnLines rl JOIN dbo.PurchaseLines pl ON pl.PurchaseLineId=rl.PurchaseLineId WHERE rl.PurchaseReturnId=@id"
+                : "INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseReturnId,PurchaseLineId,Quantity,UnitCost,PostingStatus) OUTPUT -INSERTED.Quantity*INSERTED.UnitCost SELECT @branch,ItemId,PurchaseReturnId,PurchaseLineId,-Quantity,UnitCost,N'POSTED' FROM dbo.PurchaseReturnLines WHERE PurchaseReturnId=@id";
             Add(stock, "@branch", source.BranchId, DbType.Int32);
             Add(stock, "@id", returnId, DbType.Int64);
-            await stock.ExecuteNonQueryAsync(ct);
+            stockValue = 0;
+            await using var reader = await stock.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) stockValue += reader.GetDecimal(0);
+        }
+        if (isImport)
+        {
+            await PostImportAsync(db, tx, returnNo, source, total, baseRate ?? 1, decimal.Round(stockValue, 4), date, savedBy, ct);
+            return;
         }
         if (total <= 0) return;
         // The return is valued at the invoice's own exchange rate, as the purchase was.
-        await using var rate = db.CreateCommand(); rate.Transaction = tx; rate.CommandText = "SELECT ExchangeRateToBase FROM dbo.Purchases WHERE PurchaseId=@id";
-        var idParameter = rate.CreateParameter(); idParameter.ParameterName = "@id"; idParameter.DbType = DbType.Int64; idParameter.Value = source.PurchaseId; rate.Parameters.Add(idParameter);
-        var baseRate = await rate.ExecuteScalarAsync(ct) is { } value and not DBNull ? Convert.ToDecimal(value) : (decimal?)null;
         await transactions.PostAsync(db, tx, new TransactionWriteRequest("PURCHASE_RETURN", "PURCHASE_RETURN", returnNo, $"Return of {source.InvoiceNo}", source.CurrencyId, 1,
         [
             new("2100", source.SupplierPartnerId, null, total, 0, total, 0, source.CurrencyId, 1),
             new("1300", null, null, 0, total, 0, total, source.CurrencyId, 1),
         ], source.BranchId, date, savedBy, baseRate is > 0 ? baseRate : null), ct);
+    }
+
+    private async Task PostImportAsync(DbConnection db, DbTransaction tx, string returnNo, PurchaseReturnSource source, decimal goods, decimal rate, decimal stockValue, DateTime date, int? savedBy, CancellationToken ct)
+    {
+        int primary;
+        await using (var command = db.CreateCommand())
+        {
+            command.Transaction = tx;
+            command.CommandText = "SELECT TOP 1 CurrencyId FROM dbo.Currencies WHERE IsPrimary=1 AND IsActive=1";
+            primary = await command.ExecuteScalarAsync(ct) is { } value and not DBNull ? Convert.ToInt32(value) : source.CurrencyId;
+        }
+        var goodsBase = decimal.Round(goods * rate, 4);
+        // The goods can never be worth more than the stock they leave, but rounding can tip it either way by a fraction.
+        var writtenOff = stockValue - goodsBase;
+        var lines = new List<TransactionLineRequest>
+        {
+            new("2100", source.SupplierPartnerId, null, goodsBase, 0, goods, 0, source.CurrencyId, rate),
+            new("1300", null, null, 0, stockValue, 0, stockValue, primary, 1),
+        };
+        if (writtenOff != 0)
+            lines.Add(new(ImportCostsWrittenOff, null, null, Math.Max(writtenOff, 0), Math.Max(-writtenOff, 0), Math.Max(writtenOff, 0), Math.Max(-writtenOff, 0), primary, 1));
+        await transactions.PostAsync(db, tx, new TransactionWriteRequest("PURCHASE_RETURN", "IMPORT_RETURN", returnNo, $"Return of {source.InvoiceNo}", primary, 1, lines, source.BranchId, date, savedBy), ct);
     }
 
     private static async Task<(long PurchaseId, string ReturnNo, decimal Total)?> LockPendingAsync(DbConnection db, DbTransaction tx, long returnId, CancellationToken ct)
@@ -334,7 +380,7 @@ public sealed class PurchaseReturnService(DbConnectionFactory factory, Transacti
         }
         await using var lines = db.CreateCommand();
         lines.Transaction = tx;
-        lines.CommandText = $"SELECT l.PurchaseLineId,l.ItemId,i.ItemCode,i.NameAr,i.NameEn,u.ValueEn,l.BatchNo,l.ExpiryDate,l.Quantity,{ReservedPerLine},{BatchFreePerLine},{ItemAvailable},l.UnitPrice FROM dbo.PurchaseLines l JOIN dbo.Purchases p ON p.PurchaseId=l.PurchaseId JOIN dbo.Items i ON i.ItemId=l.ItemId LEFT JOIN dbo.Settings u ON u.SettingId=l.UnitSettingId WHERE l.PurchaseId=@id ORDER BY l.PurchaseLineId";
+        lines.CommandText = $"SELECT l.PurchaseLineId,l.ItemId,i.ItemCode,i.NameAr,i.NameEn,u.ValueEn,l.BatchNo,l.ExpiryDate,l.Quantity,{ReservedPerLine},{BatchFreePerLine},{ItemAvailable},{ReturnPrice} FROM dbo.PurchaseLines l JOIN dbo.Purchases p ON p.PurchaseId=l.PurchaseId JOIN dbo.Items i ON i.ItemId=l.ItemId LEFT JOIN dbo.Settings u ON u.SettingId=l.UnitSettingId WHERE l.PurchaseId=@id ORDER BY l.PurchaseLineId";
         Add(lines, "@id", purchaseId, DbType.Int64);
         Add(lines, "@exclude", excludeReturnId, DbType.Int64);
         var items = new List<PurchaseReturnSourceLine>();

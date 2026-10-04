@@ -112,6 +112,54 @@ public sealed class SqlServerImportTests(SqlServerApiFixture fixture) : IClassFi
     }
 
     [Fact]
+    public async Task Returning_imported_goods_credits_the_supplier_the_goods_and_expenses_their_import_costs()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var item = await NewItemAsync("IM-RET");
+        var id = Id(await CreateAsync(Shipment(refs, refs.Foreign, Rate, [Line(item, 10m, 5m, "IMP-RET")])));
+        Assert.Equal(HttpStatusCode.OK, (await AddCostAsync(id, new { costType = "CLEARANCE", amount = 2000m, currencyId = refs.Primary, exchangeRateToBase = 1m, payeeType = "ACCOUNT", payeeAccountCode = "2200" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Admin.PostAsync($"/api/imports/{id}/receive", null, Ct)).StatusCode);
+        var source = await Admin.GetFromJsonAsync<JsonElement>($"/api/purchase-returns/invoices/{id}", Ct);
+        var line = source.GetProperty("lines")[0];
+        // The return screen offers the supplier's price, not the landed cost.
+        Assert.Equal(5m, line.GetProperty("unitCost").GetDecimal());
+
+        var created = await Admin.PostAsJsonAsync("/api/purchase-returns", new { purchaseId = id, reason = "Damaged", lines = new[] { new { lineId = line.GetProperty("purchaseLineId").GetInt64(), quantity = 4m } } }, Ct);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var document = await created.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        if (document.GetProperty("status").GetString() == "PENDING")
+            Assert.Equal(HttpStatusCode.OK, (await Admin.PostAsJsonAsync($"/api/purchase-returns/{document.GetProperty("purchaseReturnId").GetInt64()}/approve", new { }, Ct)).StatusCode);
+        var returnNo = document.GetProperty("returnNo").GetString();
+
+        // 4 of 10 leave stock at 1,000 each (8,000 goods + 2,000 clearance over 10). The supplier is credited 20 in the
+        // invoice currency (3,200 in the main currency) and the 800 of clearance those goods carried is expensed.
+        Assert.Equal(6, await StockAsync(item));
+        Assert.Equal(20m, await SumAsync($"SELECT SUM(ForeignDebit) FROM dbo.Transactions WHERE RefNo=N'{returnNo}' AND PartnerId={refs.Supplier} AND CurrencyId={refs.Foreign}"));
+        Assert.Equal(3200m, await SumAsync($"SELECT SUM(Debit) FROM dbo.Transactions WHERE RefNo=N'{returnNo}' AND PartnerId={refs.Supplier}"));
+        Assert.Equal(4000m, await SumAsync($"SELECT SUM(Credit) FROM dbo.Transactions WHERE RefNo=N'{returnNo}' AND AccountId=N'1300'"));
+        Assert.Equal(800m, await SumAsync($"SELECT SUM(Debit-Credit) FROM dbo.Transactions WHERE RefNo=N'{returnNo}' AND AccountId=N'5100'"));
+    }
+
+    [Fact]
+    public async Task A_received_expiry_date_needs_inventory_approval_to_change()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var item = await NewItemAsync("IM-EXP");
+        var id = Id(await CreateAsync(Shipment(refs, refs.Foreign, Rate, [Line(item, 2m, 5m), new { itemId = item, quantity = 1m, unitPrice = 5m }])));
+        var received = await (await Admin.PostAsync($"/api/imports/{id}/receive", null, Ct)).Content.ReadFromJsonAsync<JsonElement>(Ct);
+        var dated = received.GetProperty("lines")[0].GetProperty("purchaseLineId").GetInt64();
+        var undated = received.GetProperty("lines")[1].GetProperty("purchaseLineId").GetInt64();
+        var (clerk, _, _) = await fixture.CreateUserAsync("expiry-clerk", fixture.BranchA, PermissionCodes.PurchasesView, PermissionCodes.PurchasesManage);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await clerk.PatchAsJsonAsync($"/api/purchases/{id}/lines/{dated}", new { expiryDate = "2030-01-31" }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await clerk.PatchAsJsonAsync($"/api/purchases/{id}/lines/{undated}", new { expiryDate = "2027-03-31" }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await clerk.PatchAsJsonAsync($"/api/purchases/{id}/lines/{dated}", new { expiryDate = "2028-05-31", barcode = "6291234" }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Admin.PatchAsJsonAsync($"/api/purchases/{id}/lines/{dated}", new { expiryDate = "2030-01-31" }, Ct)).StatusCode);
+    }
+
+    [Fact]
     public async Task A_till_cannot_pay_more_than_it_holds()
     {
         SkipWithoutSqlServer();

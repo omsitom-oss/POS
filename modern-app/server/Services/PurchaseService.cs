@@ -61,17 +61,40 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
         catch { await tx.RollbackAsync(ct); throw; }
         return await GetByIdAsync(id,ct);
     }
-    public async Task<bool> UpdateLineMetadataAsync(long purchaseId, long lineId, PurchaseLineMetadataUpdateRequest request, CancellationToken ct)
+    // Once goods are received, sales pick batches by expiry, so a recorded expiry date can only be changed by someone who
+    // approves inventory. Filling in a missing date stays open to purchasing.
+    public async Task<bool> UpdateLineMetadataAsync(long purchaseId, long lineId, PurchaseLineMetadataUpdateRequest request, bool canChangeExpiry, CancellationToken ct)
     {
         if (request.Barcode?.Trim().Length > 100) throw new PurchaseException("Barcode must be 100 characters or fewer.");
         await using var db = await OpenAsync(ct);
-        await using var command = db.CreateCommand();
-        command.CommandText = "UPDATE dbo.PurchaseLines SET ExpiryDate=@expiry,Barcode=@barcode WHERE PurchaseLineId=@line AND PurchaseId=@purchase";
-        Add(command, "@expiry", request.ExpiryDate?.Date, DbType.Date);
-        Add(command, "@barcode", string.IsNullOrWhiteSpace(request.Barcode) ? null : request.Barcode.Trim(), DbType.String);
-        Add(command, "@line", lineId, DbType.Int64);
-        Add(command, "@purchase", purchaseId, DbType.Int64);
-        return await command.ExecuteNonQueryAsync(ct) > 0;
+        await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        try
+        {
+            await using (var current = db.CreateCommand())
+            {
+                current.Transaction = tx;
+                current.CommandText = "SELECT p.Status,l.ExpiryDate FROM dbo.PurchaseLines l WITH (UPDLOCK) JOIN dbo.Purchases p ON p.PurchaseId=l.PurchaseId WHERE l.PurchaseLineId=@line AND l.PurchaseId=@purchase";
+                Add(current, "@line", lineId, DbType.Int64);
+                Add(current, "@purchase", purchaseId, DbType.Int64);
+                await using var reader = await current.ExecuteReaderAsync(ct);
+                if (!await reader.ReadAsync(ct)) { await reader.CloseAsync(); await tx.RollbackAsync(ct); return false; }
+                var received = reader.GetString(0) == "POSTED";
+                DateTime? expiry = reader.IsDBNull(1) ? null : reader.GetDateTime(1).Date;
+                if (received && expiry.HasValue && expiry != request.ExpiryDate?.Date && !canChangeExpiry)
+                    throw new PurchaseException("Changing the expiry date of received stock needs the inventory approval permission.", 403);
+            }
+            await using var command = db.CreateCommand();
+            command.Transaction = tx;
+            command.CommandText = "UPDATE dbo.PurchaseLines SET ExpiryDate=@expiry,Barcode=@barcode WHERE PurchaseLineId=@line AND PurchaseId=@purchase";
+            Add(command, "@expiry", request.ExpiryDate?.Date, DbType.Date);
+            Add(command, "@barcode", string.IsNullOrWhiteSpace(request.Barcode) ? null : request.Barcode.Trim(), DbType.String);
+            Add(command, "@line", lineId, DbType.Int64);
+            Add(command, "@purchase", purchaseId, DbType.Int64);
+            var changed = await command.ExecuteNonQueryAsync(ct) > 0;
+            await tx.CommitAsync(ct);
+            return changed;
+        }
+        catch { await tx.RollbackAsync(ct); throw; }
     }
     public async Task<bool> DeleteDraftAsync(long id, CancellationToken ct)
     {
