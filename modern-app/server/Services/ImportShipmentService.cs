@@ -196,10 +196,12 @@ public sealed class ImportShipmentService(DbConnectionFactory factory, Transacti
                     Add(update, "@line", line.PurchaseLineId, DbType.Int64);
                     await update.ExecuteNonQueryAsync(ct);
                 }
-                await using var stock = Command(db, tx, "INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@purchase,@quantity,@cost,N'POSTED')");
+                await using var stock = Command(db, tx, "INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseId,PurchaseLineId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@purchase,@line,@quantity,@cost,N'POSTED')");
                 Add(stock, "@branch", shipment.Value.Branch, DbType.Int32);
                 Add(stock, "@item", item, DbType.Int64);
                 Add(stock, "@purchase", id, DbType.Int64);
+                // Each line is its own batch, so sales take imported stock by expiry like any other purchase.
+                Add(stock, "@line", line.PurchaseLineId, DbType.Int64);
                 Add(stock, "@quantity", quantity, DbType.Decimal);
                 Add(stock, "@cost", unitCost, DbType.Decimal);
                 await stock.ExecuteNonQueryAsync(ct);

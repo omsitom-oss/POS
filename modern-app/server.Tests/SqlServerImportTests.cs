@@ -93,6 +93,25 @@ public sealed class SqlServerImportTests(SqlServerApiFixture fixture) : IClassFi
     }
 
     [Fact]
+    public async Task Received_import_stock_is_sold_from_the_batch_that_expires_first()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var item = await NewItemAsync("IM-FEFO");
+        var late = new { itemId = item, quantity = 3m, unitPrice = 5m, expiryDate = (DateTime?)DateTime.Today.AddDays(90), batchNo = "IMP-LATE" };
+        var soon = new { itemId = item, quantity = 3m, unitPrice = 5m, expiryDate = (DateTime?)DateTime.Today.AddDays(20), batchNo = "IMP-SOON" };
+        var id = Id(await CreateAsync(Shipment(refs, refs.Foreign, Rate, [late, soon])));
+        Assert.Equal(HttpStatusCode.OK, (await Admin.PostAsync($"/api/imports/{id}/receive", null, Ct)).StatusCode);
+        Assert.Equal(0, await fixture.Database.CountAsync($"SELECT COUNT(*) FROM dbo.StockMovements WHERE PurchaseId={id} AND PurchaseLineId IS NULL", Ct));
+
+        var sale = await Admin.PostAsJsonAsync("/api/sales", new { treasuryId = refs.Till, currencyId = refs.Primary, lines = new[] { new { itemId = item, quantity = 4m, unitPrice = 2000m } } }, Ct);
+
+        Assert.Equal(HttpStatusCode.Created, sale.StatusCode);
+        Assert.Equal(0m, await BatchLeftAsync(id, "IMP-SOON"));
+        Assert.Equal(2m, await BatchLeftAsync(id, "IMP-LATE"));
+    }
+
+    [Fact]
     public async Task A_till_cannot_pay_more_than_it_holds()
     {
         SkipWithoutSqlServer();
@@ -225,6 +244,9 @@ public sealed class SqlServerImportTests(SqlServerApiFixture fixture) : IClassFi
 
     private Task<decimal> ShipperOwesAsync(Refs refs, long id) =>
         SumAsync($"SELECT COALESCE(SUM(t.ForeignCredit-t.ForeignDebit),0) FROM dbo.Transactions t JOIN dbo.Purchases p ON t.RefNo LIKE p.InvoiceNo+N':COST:%' WHERE p.PurchaseId={id} AND t.PartnerId={refs.Shipper}");
+
+    private Task<decimal> BatchLeftAsync(long id, string batch) =>
+        SumAsync($"SELECT COALESCE(SUM(sm.Quantity),0) FROM dbo.StockMovements sm JOIN dbo.PurchaseLines pl ON pl.PurchaseLineId=sm.PurchaseLineId WHERE pl.PurchaseId={id} AND pl.BatchNo=N'{batch}' AND sm.PostingStatus=N'POSTED'");
 
     private Task<decimal> SumAsync(string sql) => fixture.Database.ScalarAsync<decimal>(sql, Ct);
 
