@@ -277,8 +277,9 @@ public sealed class SqlServerSecurityTests(SqlServerApiFixture fixture) : IClass
         var (client, _, _) = await UserAsync("journal-user", fixture.BranchA, PermissionCodes.TreasuryView, PermissionCodes.JournalPost);
         var posted = await client.PostAsJsonAsync("/api/transactions", new { transactionType = "RECEIPT", pattern = "TEST", refNo = "JOURNAL-TYPE-TEST", currencyId = fixture.CurrencyId, exchangeRate = 1, lines = new object[]
         {
-            new { accountId = $"TREASURY:{fixture.TreasuryA}", treasuryId = fixture.TreasuryA, debit = 0, credit = 1, foreignDebit = 0, foreignCredit = 1 },
-            new { accountId = fixture.ExpenseAccount, debit = 1, credit = 0, foreignDebit = 1, foreignCredit = 0 },
+            // Money goes into the till: a till may not be paid out below zero.
+            new { accountId = $"TREASURY:{fixture.TreasuryA}", treasuryId = fixture.TreasuryA, debit = 1, credit = 0, foreignDebit = 1, foreignCredit = 0 },
+            new { accountId = fixture.ExpenseAccount, debit = 0, credit = 1, foreignDebit = 0, foreignCredit = 1 },
         } }, Ct);
         Assert.Equal(HttpStatusCode.Created, posted.StatusCode);
         Assert.Equal(2, await fixture.Database.CountAsync("SELECT COUNT(*) FROM dbo.Transactions WHERE RefNo=N'JOURNAL-TYPE-TEST' AND TransactionType=N'MANUAL'", Ct));

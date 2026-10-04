@@ -21,7 +21,11 @@ public sealed record TransactionWriteRequest(
     IReadOnlyList<TransactionLineRequest>? Lines,
     int? BranchId = null,
     DateTime? TransactionDate = null,
-    int? SavedBy = null);
+    int? SavedBy = null,
+    // Primary-currency units per one unit of CurrencyId for this document; when null the latest stored rate is used.
+    decimal? BaseRate = null,
+    // Who was paid, when money leaves a till for someone with no partner account.
+    string? PayeeName = null);
 
 public sealed record TransactionWriteResult(
     int MoveNo,
@@ -120,11 +124,12 @@ public sealed record ExpenseWriteRequest(
     DateTime? ExpenseDate = null,
     string? Description = null,
     int? BranchId = null,
-    int? SavedBy = null);
+    int? SavedBy = null,
+    string? PayeeName = null);
 
 public sealed record ExpenseWriteResult(string ExpenseNo, int TreasuryId, string ExpenseAccountId, decimal Amount, TransactionWriteResult Transaction);
 
-public sealed record ExpenseListItem(int MoveNo, string ExpenseNo, DateTime ExpenseDate, string ExpenseAccountId, string ExpenseNameEn, string ExpenseNameAr, int TreasuryId, string TreasuryName, int CurrencyId, string CurrencyCode, string CurrencySymbol, decimal Amount, string? Description);
+public sealed record ExpenseListItem(int MoveNo, string ExpenseNo, DateTime ExpenseDate, string ExpenseAccountId, string ExpenseNameEn, string ExpenseNameAr, int TreasuryId, string TreasuryName, int CurrencyId, string CurrencyCode, string CurrencySymbol, decimal Amount, string? Description, string? PayeeName = null);
 
 public sealed record TreasuryTransferRequest(
     int SourceTreasuryId,

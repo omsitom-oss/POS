@@ -109,7 +109,7 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
     { key: "invoiceNo", title: ar ? "رقم الفاتورة" : "Invoice", value: (x) => x.invoiceNo, render: (x) => <span className="doc-no">{x.invoiceNo}</span> },
     { key: "purchaseDate", title: ar ? "التاريخ" : "Date", value: (x) => x.purchaseDate, render: (x) => formatPurchaseDate(x.purchaseDate), searchable: false },
     { key: "supplierName", title: ar ? "المورد" : "Supplier", value: (x) => x.supplierName, wrap: true },
-    { key: "status", title: ar ? "الحالة" : "Status", value: (x) => x.status, searchable: false, render: (x) => <StatusBadge tone={x.status === "POSTED" ? "success" : "neutral"}>{x.status === "POSTED" ? (ar ? "نهائية" : "Posted") : (ar ? "مبدئية" : "Draft")}</StatusBadge> },
+    { key: "status", title: ar ? "الحالة" : "Status", value: (x) => x.status, searchable: false, render: (x) => <StatusBadge tone={x.status === "POSTED" ? "success" : x.status === "CANCELLED" ? "danger" : "neutral"}>{x.status === "POSTED" ? (ar ? "نهائية" : "Posted") : x.status === "CANCELLED" ? (ar ? "ملغاة" : "Cancelled") : (ar ? "مبدئية" : "Draft")}</StatusBadge> },
     { key: "lineCount", title: ar ? "الأصناف" : "Items", value: (x) => x.lineCount, align: "end", searchable: false },
     { key: "total", title: ar ? "الإجمالي" : "Total", value: (x) => x.total, align: "end", searchable: false, render: (x) => <Money value={x.total} symbol={x.currencySymbol} /> },
   ];
@@ -119,9 +119,10 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
     if (!response.ok) { setError(await response.text()); return; }
     await load();
   }
-  async function cancelDraft(purchaseId: number) {
-    if (!window.confirm(ar ? "هل تريد إلغاء وحذف الفاتورة المبدئية؟" : "Cancel and delete this draft invoice?")) return;
-    const response = await fetch(`/api/purchases/${purchaseId}`, { method: "DELETE" });
+  // An import draft is cancelled with reversing entries and kept; a local draft has no entries and is deleted.
+  async function cancelDraft(purchaseId: number, isImport: boolean) {
+    if (!window.confirm(isImport ? (ar ? "سيتم إلغاء الشحنة وعكس قيودها. هل تريد المتابعة؟" : "Cancel this shipment and reverse its entries?") : (ar ? "هل تريد إلغاء وحذف الفاتورة المبدئية؟" : "Cancel and delete this draft invoice?"))) return;
+    const response = await fetch(isImport ? `/api/imports/${purchaseId}/cancel` : `/api/purchases/${purchaseId}`, { method: isImport ? "POST" : "DELETE" });
     if (!response.ok) { setError(await response.text()); return; }
     await load();
   }
@@ -192,8 +193,8 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
             <IconButton label={ar ? "طباعة" : "Print"} onClick={() => void printPurchase(x.purchaseId)}><Icon name="document" size={18} /></IconButton>
             {x.status === "DRAFT" ? <>
               {x.purchaseType !== "IMPORT" && <IconButton label={ar ? "تأكيد الفاتورة" : "Confirm invoice"} onClick={() => void confirmDraft(x.purchaseId)}><Icon name="enable" size={18} /></IconButton>}
-              <IconButton label={ar ? "إلغاء الفاتورة" : "Cancel invoice"} onClick={() => void cancelDraft(x.purchaseId)}><Icon name="disable" size={18} /></IconButton>
-            </> : <IconButton label={ar ? "إرجاع" : "Return"} onClick={() => setError(ar ? "سيتم طلب اعتماد الإرجاع من مستخدم ذي صلاحية أعلى." : "Return approval is required from a higher-privilege user.")}><Icon name="swap" size={18} /></IconButton>}
+              <IconButton label={ar ? "إلغاء الفاتورة" : "Cancel invoice"} onClick={() => void cancelDraft(x.purchaseId, x.purchaseType === "IMPORT")}><Icon name="disable" size={18} /></IconButton>
+            </> : x.status === "POSTED" && <IconButton label={ar ? "إرجاع" : "Return"} onClick={() => setError(ar ? "سيتم طلب اعتماد الإرجاع من مستخدم ذي صلاحية أعلى." : "Return approval is required from a higher-privilege user.")}><Icon name="swap" size={18} /></IconButton>}
           </div>
         )}
         emptyTitle={ar ? "لا توجد فواتير" : "No invoices"}
