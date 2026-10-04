@@ -87,7 +87,7 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
         { "GET", "/api/inventory" }, { "POST", "/api/inventory/disposals" }, { "POST", "/api/inventory/requests/1/approve" },
         { "GET", "/api/receipts" }, { "POST", "/api/receipts" }, { "GET", "/api/expenses" }, { "POST", "/api/expenses" },
         { "GET", "/api/transactions/treasury/1" }, { "POST", "/api/transactions" }, { "POST", "/api/treasury-transfers" },
-        { "GET", "/api/accounts/chart" }, { "GET", "/api/reports/summary" },
+        { "GET", "/api/accounts/chart" }, { "GET", "/api/reports/summary" }, { "GET", "/api/reports/overview" },
         { "GET", "/api/management/customers" }, { "POST", "/api/management/customers" },
     };
 
@@ -130,6 +130,7 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
     [InlineData("GET", "/api/expenses?branchId=2")]
     [InlineData("GET", "/api/inventory?branchId=2")]
     [InlineData("GET", "/api/reports/summary?branchId=2")]
+    [InlineData("GET", "/api/reports/overview?branchId=2")]
     [InlineData("GET", "/api/accounts/chart?branchId=2")]
     [InlineData("GET", "/api/transactions/treasury/1?branchId=2")]
     [InlineData("GET", "/api/treasuries?branchId=2")]

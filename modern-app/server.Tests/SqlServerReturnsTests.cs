@@ -272,6 +272,36 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
     }
 
     [Fact]
+    public async Task Report_overview_breaks_the_period_down_by_day_and_item()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var x = await NewItemAsync("RP-OVR");
+        await BuyAsync(refs, 0, (x, 5, 4m, null));
+        var url = $"/api/reports/overview?branchId={fixture.BranchA}";
+        var before = await Admin.GetFromJsonAsync<JsonElement>(url, Ct);
+        // 3 at 1000 less a 300 invoice discount: the item earns 2700 of net sales and costs 3 x 4.
+        await SellAsync(refs, 300m, (x, 3, 1000m));
+        var after = await Admin.GetFromJsonAsync<JsonElement>(url, Ct);
+
+        static JsonElement Today(JsonElement overview) => overview.GetProperty("days").EnumerateArray().Last();
+        Assert.Equal(31, after.GetProperty("days").GetArrayLength());
+        Assert.Equal(2700m, Today(after).GetProperty("sales").GetDecimal() - Today(before).GetProperty("sales").GetDecimal());
+        Assert.Equal(12m, Today(after).GetProperty("cost").GetDecimal() - Today(before).GetProperty("cost").GetDecimal());
+        Assert.Equal(1, Today(after).GetProperty("invoices").GetInt32() - Today(before).GetProperty("invoices").GetInt32());
+        var item = after.GetProperty("topItems").EnumerateArray().Single(row => row.GetProperty("itemId").GetInt64() == x);
+        Assert.Equal(3m, item.GetProperty("quantity").GetDecimal());
+        Assert.Equal(2700m, item.GetProperty("revenue").GetDecimal());
+        Assert.Equal(12m, item.GetProperty("cost").GetDecimal());
+        Assert.Equal(2700m, after.GetProperty("payments").GetProperty("cash").GetDecimal() - before.GetProperty("payments").GetProperty("cash").GetDecimal());
+        Assert.Equal(after.GetProperty("summary").GetProperty("salesTotal").GetDecimal(), after.GetProperty("days").EnumerateArray().Sum(day => day.GetProperty("sales").GetDecimal()));
+
+        // A huge range is cut to three years so the day series stays small.
+        var wide = await Admin.GetFromJsonAsync<JsonElement>($"/api/reports/overview?branchId={fixture.BranchA}&from=0001-01-01", Ct);
+        Assert.Equal(1096, wide.GetProperty("days").GetArrayLength());
+    }
+
+    [Fact]
     public async Task A_sale_moves_its_cost_out_of_inventory_and_a_return_moves_it_back()
     {
         SkipWithoutSqlServer();
