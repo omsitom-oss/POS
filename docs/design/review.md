@@ -38,3 +38,15 @@ All tokens live in `modern-app/frontend/src/styles/tokens.css`. Dark mode only r
 
 - `CurrencyInput` hard-codes the `د.إ` prefix, and inventory always shows `SDG` while purchases and treasuries fall back to it when no primary currency is set.
 - Several pages still build tables by hand instead of `DataTable`; moving them is part of the per-page refresh (WS3-T3).
+
+## October 2026 redesign, step 1 (direction A, "till first")
+
+The second audit (artifact "Elite POS design audit") found the layout, not the colours, was the problem. Step 1 changes the frame of the app:
+
+- **Look.** Emerald brand (`#0a7a55` light, `#3fcf96` dark) on cool neutrals; the sidebar is a dark rail in both themes. Smaller radii, 40px controls, 48px table rows.
+- **Font.** IBM Plex Sans Arabic is bundled through `@fontsource/ibm-plex-sans-arabic`, so Arabic and Latin share one face and it works offline. It replaces Simplified Arabic.
+- **Navigation.** One menu definition in `AppLayout.tsx`, grouped into Sell, Stock, Money and Admin. The top bar shows group / page; page headers no longer repeat an eyebrow. Design Lab shows only in development builds. "Suppliers · Soon" is gone.
+- **Home.** `/` is a dashboard: today's sales, invoices, average invoice and returns against yesterday, the last 7 days, a "needs attention" list (out of stock, below minimum, purchase returns waiting) and the latest sales. Each source loads on its own, so a missing permission hides one panel instead of the page.
+- **Language** is remembered between visits (`elite-pos-locale`).
+
+Next steps: one list pattern and `formatMoney` everywhere (step 2), then the full-screen till (step 3).

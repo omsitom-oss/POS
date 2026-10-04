@@ -19,12 +19,15 @@ import { SalesPage } from '../features/sales/SalesPage'
 import { SalesReturnsPage } from '../features/returns/SalesReturnsPage'
 import { PurchaseReturnsPage } from '../features/returns/PurchaseReturnsPage'
 import { ReportsPage } from '../features/reports/ReportsPage'
+import { HomePage } from '../features/home/HomePage'
 import { clearSession, readSession, saveSession, sessionExpiredEvent } from './session'
 
 type Health = { provider: string; connected: boolean; message: string }
 
 function App() {
-  const [locale, setLocale] = useState<Locale>('en')
+  const [locale, setLocale] = useState<Locale>(() => {
+    try { return localStorage.getItem('elite-pos-locale') === 'ar' ? 'ar' : 'en' } catch { return 'en' }
+  })
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     try { return localStorage.getItem('elite-pos-theme') === 'dark' ? 'dark' : 'light' } catch { return 'light' }
   })
@@ -47,6 +50,7 @@ function App() {
   useEffect(() => {
     document.documentElement.lang = locale
     document.documentElement.dir = locale === 'ar' ? 'rtl' : 'ltr'
+    try { localStorage.setItem('elite-pos-locale', locale) } catch { /* Language still applies for this session. */ }
   }, [locale])
 
   useEffect(() => {
@@ -64,7 +68,7 @@ function App() {
   function navigate(section: string) {
     const nextSection = section
     setSection(nextSection)
-    const path = nextSection === 'sales' ? '/sales' : nextSection === 'sales-returns' ? '/sales/returns' : nextSection === 'purchase-returns' ? '/purchases/returns' : nextSection === 'reports' ? '/reports' : nextSection === 'settings' ? '/settings' : nextSection === 'users' ? '/users' : nextSection === 'items' ? '/items' : nextSection === 'accounts' ? '/accounts' : nextSection === 'treasury-transfer' ? '/accounts/transfer' : nextSection === 'receipts' ? '/receipts' : nextSection === 'expenses' ? '/expenses' : nextSection === 'purchases' ? '/purchases' : nextSection === 'purchase-import' ? '/purchases/import' : nextSection === 'inventory' ? '/inventory' : nextSection.startsWith('settings:') ? settingsPath(nextSection) : nextSection.startsWith('lab:') ? '/design-lab' : nextSection === 'customers' || nextSection.startsWith('customer:') ? '/customers' : '/settings'
+    const path = sectionPaths[nextSection] ?? (nextSection.startsWith('settings:') ? settingsPath(nextSection) : nextSection.startsWith('lab:') ? '/design-lab' : nextSection.startsWith('customer:') ? '/customers' : '/')
     if (window.location.pathname !== path) window.history.pushState(null, '', path)
   }
 
@@ -100,7 +104,9 @@ function App() {
   if (!session) return <LoginPage locale={locale} onLogin={setSession} themeMode={themeMode} onLocaleChange={setLocale} onThemeModeChange={setThemeMode} />
   if (session.mustChangePassword) return <ChangePasswordPage locale={locale} onChanged={() => { const next = { ...session, mustChangePassword: false }; saveSession(next); setSession(next) }} />
 
-  const content = section === 'accounts'
+  const content = section === 'home'
+    ? <HomePage locale={locale} branchId={session.branchId} onNavigate={navigate} />
+    : section === 'accounts'
     ? <AccountsPage locale={locale} />
     : section === 'treasury-transfer'
     ? <TreasuryTransferPage locale={locale} />
@@ -135,29 +141,23 @@ function App() {
   return <AppLayout locale={locale} onLocaleChange={setLocale} themeMode={themeMode} onThemeModeChange={setThemeMode} activeSection={section} onSectionChange={navigate} serviceOnline={isManagement ? managementOnline : health?.connected ?? null} serviceProvider={isManagement ? 'POSManagement' : health?.provider} operatorName={session.userName} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} onLogout={() => { void fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined); clearSession(); setSession(null) }} onExchangeRates={isManagement ? undefined : () => setRatesOpen(true)}><>{content}<CurrencyRatesDialog open={ratesOpen} locale={locale} onClose={() => setRatesOpen(false)} /></></AppLayout>
 }
 
+const sectionPaths: Record<string, string> = {
+  home: '/', sales: '/sales', 'sales-returns': '/sales/returns', 'purchase-returns': '/purchases/returns', reports: '/reports', settings: '/settings',
+  users: '/users', items: '/items', accounts: '/accounts', 'treasury-transfer': '/accounts/transfer', receipts: '/receipts', expenses: '/expenses',
+  purchases: '/purchases', 'purchase-import': '/purchases/import', inventory: '/inventory', customers: '/customers', 'new-customer': '/customers',
+}
+
 function sectionFromPath(path: string) {
   if (path === '/design-lab') return 'lab:overview'
-  if (path === '/sales') return 'sales'
-  if (path === '/sales/returns') return 'sales-returns'
-  if (path === '/purchases/returns') return 'purchase-returns'
-  if (path === '/reports') return 'reports'
-  if (path === '/customers') return 'customers'
-  if (path === '/users') return 'users'
-  if (path === '/items') return 'items'
-  if (path === '/accounts') return 'accounts'
-  if (path === '/accounts/transfer') return 'treasury-transfer'
-  if (path === '/receipts') return 'receipts'
-  if (path === '/expenses') return 'expenses'
-  if (path === '/purchases/import') return 'purchase-import'
-  if (path === '/purchases') return 'purchases'
-  if (path === '/inventory') return 'inventory'
+  const known = Object.entries(sectionPaths).find(([section, sectionPath]) => sectionPath === path && section !== 'new-customer')
+  if (known) return known[0]
   const settingsMatch = path.match(/^\/settings(?:\/([^/]+)(?:\/(.*))?)?\/?$/)
   if (settingsMatch?.[1]) {
     const code = decodeURIComponent(settingsMatch[1])
     const ids = (settingsMatch[2] ?? '').split('/').filter(Boolean).map(Number).filter(id => Number.isInteger(id) && id > 0)
     return `settings:${code}${ids.length ? `:${ids.join('/')}` : ''}`
   }
-  return 'settings'
+  return path.startsWith('/settings') ? 'settings' : 'home'
 }
 
 function parseSettingsSection(section: string): SettingsRoute | null {
