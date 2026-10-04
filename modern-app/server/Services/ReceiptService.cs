@@ -45,7 +45,9 @@ public sealed class ReceiptService(DbConnectionFactory factory, TransactionServi
         var receipt = type == "RECEIPT";
         var partnerAccount = $"PARTNER:{request.PartnerId}";
         var treasuryAccount = $"TREASURY:{request.TreasuryId}";
-        var primary = await TransactionService.RateToPrimaryAsync(db, tx, treasuryCurrencyId, date, ct);
+        // When the partner's account is in the primary currency, the partner amount is the receipt's primary value, so the entered rate wins over the stored one.
+        decimal? enteredRate = partnerCurrencyId != treasuryCurrencyId && await IsPrimaryAsync(db, tx, partnerCurrencyId, ct) ? partnerAmount / request.Amount : null;
+        var primary = await TransactionService.RateToPrimaryAsync(db, tx, treasuryCurrencyId, date, ct, enteredRate);
         if (primary is null)
         {
             // No primary currency set up yet: keep everything in the treasury currency.
@@ -114,6 +116,12 @@ public sealed class ReceiptService(DbConnectionFactory factory, TransactionServi
     {
         await using (var partner = db.CreateCommand()) { partner.CommandText = "SELECT Status FROM dbo.Partners WHERE PartnerId=@id"; Add(partner, "@id", request.PartnerId, DbType.Int32); var status = await partner.ExecuteScalarAsync(ct); if (status is null) throw new ReceiptException("Partner was not found.", 404); if (!string.Equals(Convert.ToString(status), "ACTIVE", StringComparison.OrdinalIgnoreCase)) throw new ReceiptException("An inactive partner cannot be used in a receipt."); }
         await using var treasury = db.CreateCommand(); treasury.CommandText = "SELECT CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id AND BranchId=@branch"; Add(treasury, "@id", request.TreasuryId, DbType.Int32); Add(treasury, "@branch", request.BranchId, DbType.Int32); await using var reader = await treasury.ExecuteReaderAsync(ct); if (!await reader.ReadAsync(ct)) throw new ReceiptException("Treasury was not found.", 404); if (!reader.GetBoolean(1)) throw new ReceiptException("An inactive treasury cannot be used in a receipt."); return (reader.GetInt32(0), reader.GetBoolean(1));
+    }
+
+    private static async Task<bool> IsPrimaryAsync(DbConnection db, DbTransaction tx, int currencyId, CancellationToken ct)
+    {
+        await using var command = db.CreateCommand(); command.Transaction = tx; command.CommandText = "SELECT IsPrimary FROM dbo.Currencies WHERE CurrencyId=@id"; Add(command, "@id", currencyId, DbType.Int32);
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(ct) ?? false);
     }
 
     private static async Task<int> NextReceiptNumberAsync(DbConnection db, DateTime receiptDate, string type, CancellationToken ct)
