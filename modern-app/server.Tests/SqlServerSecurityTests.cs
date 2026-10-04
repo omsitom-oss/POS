@@ -248,7 +248,7 @@ public sealed class SqlServerSecurityTests(SqlServerApiFixture fixture) : IClass
     public async Task Treasuries_of_another_branch_cannot_be_used_or_seen()
     {
         SkipWithoutSqlServer();
-        var (client, _, _) = await UserAsync("branch-b-cashier", fixture.BranchB, PermissionCodes.TreasuryManage, PermissionCodes.TreasuryView);
+        var (client, _, _) = await UserAsync("branch-b-cashier", fixture.BranchB, PermissionCodes.TreasuryManage, PermissionCodes.TreasuryView, PermissionCodes.JournalPost);
         var treasuries = await client.GetFromJsonAsync<JsonElement[]>("/api/treasuries", Ct);
         Assert.Equal([fixture.TreasuryB], treasuries!.Select(t => t.GetProperty("treasuryId").GetInt32()));
         var branches = await client.GetFromJsonAsync<JsonElement[]>("/api/branches", Ct);
@@ -267,6 +267,42 @@ public sealed class SqlServerSecurityTests(SqlServerApiFixture fixture) : IClass
         Assert.Equal(HttpStatusCode.NotFound, manual.StatusCode);
         var editOther = await client.PostAsync($"/api/treasuries/{fixture.TreasuryA}/deactivate", null, Ct);
         Assert.Equal(HttpStatusCode.Forbidden, editOther.StatusCode);
+    }
+
+    [Fact]
+    public async Task Manual_journal_entries_are_always_typed_manual()
+    {
+        SkipWithoutSqlServer();
+        Assert.NotNull(fixture.ExpenseAccount);
+        var (client, _, _) = await UserAsync("journal-user", fixture.BranchA, PermissionCodes.TreasuryView, PermissionCodes.JournalPost);
+        var posted = await client.PostAsJsonAsync("/api/transactions", new { transactionType = "RECEIPT", pattern = "TEST", refNo = "JOURNAL-TYPE-TEST", currencyId = fixture.CurrencyId, exchangeRate = 1, lines = new object[]
+        {
+            new { accountId = $"TREASURY:{fixture.TreasuryA}", treasuryId = fixture.TreasuryA, debit = 0, credit = 1, foreignDebit = 0, foreignCredit = 1 },
+            new { accountId = fixture.ExpenseAccount, debit = 1, credit = 0, foreignDebit = 1, foreignCredit = 0 },
+        } }, Ct);
+        Assert.Equal(HttpStatusCode.Created, posted.StatusCode);
+        Assert.Equal(2, await fixture.Database.CountAsync("SELECT COUNT(*) FROM dbo.Transactions WHERE RefNo=N'JOURNAL-TYPE-TEST' AND TransactionType=N'MANUAL'", Ct));
+    }
+
+    [Fact]
+    public async Task The_last_user_manager_cannot_be_removed()
+    {
+        SkipWithoutSqlServer();
+        var admin = await AdminAsync();
+        var me = await admin.GetFromJsonAsync<JsonElement>("/api/auth/me", Ct);
+        var adminId = me.GetProperty("userId").GetInt32();
+        var roles = await admin.GetFromJsonAsync<JsonElement[]>("/api/roles", Ct);
+        var adminRole = roles!.Single(r => r.GetProperty("name").GetString() == AdminBootstrap.RoleName).GetProperty("roleId").GetInt32();
+
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.PostAsync($"/api/users/{adminId}/deactivate", null, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.PostAsync($"/api/roles/{adminRole}/deactivate", null, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.PutAsJsonAsync($"/api/roles/{adminRole}", new { name = AdminBootstrap.RoleName, isActive = true, permissionIds = Array.Empty<int>() }, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.PutAsJsonAsync($"/api/users/{adminId}", new { userName = "admin", branchId = fixture.BranchA, roleIds = Array.Empty<int>() }, Ct)).StatusCode);
+
+        // Nothing was changed: the admin still manages users and the role keeps every permission.
+        Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/api/users", Ct)).StatusCode);
+        var after = await admin.GetFromJsonAsync<JsonElement>("/api/auth/me", Ct);
+        Assert.Equal(PermissionCodes.All.Order(), after.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).Order());
     }
 
     private async Task<long> OtherBranchPurchaseIdAsync()

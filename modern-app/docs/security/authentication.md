@@ -38,14 +38,15 @@ Each permission code is an authorization policy (`server/Security/PermissionCode
 | Permission | Allows |
 |---|---|
 | (signed in) | Reading reference data: items, partners, settings, locations, currencies, banks, company profile, approval policies, and the user's own branch and its treasuries |
-| `USER_MANAGEMENT` | Users, roles and the permission list |
+| `USER_MANAGEMENT` | Users, roles and the permission list. A change that would leave no active user holding this permission (deactivating the last administrator, their role, or removing the permission) is refused with 409. |
 | `SETTINGS_MANAGE` | Changing settings, locations, company profile, currencies, branches, treasuries, banks, approval policies |
 | `EXCHANGE_RATES_EDIT` | Changing currency rates |
 | `ITEMS_MANAGE`, `PARTNERS_MANAGE` | Creating and editing items, partners |
 | `SALES_VIEW`, `SALES_CREATE` | Sales list, posting sales |
 | `PURCHASES_VIEW`, `PURCHASES_MANAGE` | Purchases and imports: reading, and drafting, costs, posting, deleting |
 | `INVENTORY_VIEW`, `INVENTORY_DISPOSE`, `INVENTORY_APPROVE` | Stock and batches, disposal requests, approving them |
-| `TREASURY_VIEW`, `TREASURY_MANAGE` | Receipts, expenses, statements, balances and chart of accounts; recording receipts, payments, expenses, transfers and manual transactions |
+| `TREASURY_VIEW`, `TREASURY_MANAGE` | Receipts, expenses, statements, balances and chart of accounts; recording receipts, payments, expenses and transfers |
+| `JOURNAL_POST` | Manual journal entries (`POST /api/transactions`, also needs `TREASURY_VIEW`). They are always stored with type `MANUAL`. Migration 049 gives it to roles that hold `USER_MANAGEMENT`. |
 | `REPORTS_VIEW` | Report summary |
 | `ALL_BRANCHES` | Operational data of other branches |
 | `MANAGEMENT_ACCESS` | The central POSManagement customer registry |
@@ -68,5 +69,5 @@ Not branch-scoped yet: items and partners are shared catalogues, and partner bal
 
 ## Upgrading an existing install
 
-- Migration 046 gives every existing role the day-to-day permissions, including `TREASURY_MANAGE` and `PURCHASES_MANAGE`. Review every role in Settings > Roles after upgrading and remove what each job does not need; until then cashiers keep the right to record manual transactions.
+- Migration 046 gives every existing role the day-to-day permissions, including `TREASURY_MANAGE` and `PURCHASES_MANAGE`. Review every role in Settings > Roles after upgrading and remove what each job does not need. Manual journal entries moved to `JOURNAL_POST` in migration 049, so cashiers no longer get them through `TREASURY_MANAGE`.
 - Migration 031 put every existing treasury in the first branch. Until an administrator moves each other branch's tills to that branch in Settings > Treasuries, users of other branches cannot post sales, receipts or expenses.
