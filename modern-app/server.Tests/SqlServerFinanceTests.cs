@@ -231,6 +231,71 @@ public sealed class SqlServerFinanceTests(SqlServerApiFixture fixture) : IClassF
     }
 
     [Fact]
+    public async Task Paying_a_foreign_supplier_from_any_till_posts_the_exchange_difference()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        await fixture.Database.ExecuteAsync($"""
+            IF NOT EXISTS (SELECT 1 FROM dbo.Currencies WHERE CurrencyCode=N'SRX')
+                INSERT dbo.Currencies(CurrencyCode,CurrencyNameEn,CurrencyNameAr,Symbol,IsPrimary) VALUES(N'SRX',N'Riyal',N'ريال',N'SR',0);
+            DECLARE @sr int = (SELECT CurrencyId FROM dbo.Currencies WHERE CurrencyCode=N'SRX');
+            INSERT dbo.CurrencyRateHistory(CurrencyId,BaseCurrencyId,Rate) VALUES(@sr,{refs.Currency},50);
+            IF NOT EXISTS (SELECT 1 FROM dbo.Partners WHERE PartnerCode=N'P-FX')
+                INSERT dbo.Partners(PartnerCode,PartnerName,Status,PartnerTypeSettingId) SELECT N'P-FX',N'Riyal supplier',N'ACTIVE',PartnerTypeSettingId FROM dbo.Partners WHERE PartnerCode=N'P-SEC';
+            """, "riyal supplier", Ct);
+        var sr = await fixture.Database.CountAsync("SELECT CurrencyId FROM dbo.Currencies WHERE CurrencyCode=N'SRX'", Ct);
+        var supplier = await fixture.Database.CountAsync("SELECT PartnerId FROM dbo.Partners WHERE PartnerCode=N'P-FX'", Ct);
+        var item = await NewItemAsync("FN-SR");
+        async Task Buy() => Assert.Equal(HttpStatusCode.Created, (await Admin.PostAsJsonAsync("/api/purchases", new { supplierPartnerId = supplier, currencyId = sr, exchangeRateToBase = 50m, status = "POSTED", lines = new[] { new { itemId = item, quantity = 10m, unitPrice = 10m } } }, Ct)).StatusCode);
+        async Task<string> Pay(decimal riyals, decimal rate)
+        {
+            var response = await Admin.PostAsJsonAsync("/api/receipts", new { type = "PAYMENT", partnerId = supplier, treasuryId = refs.Treasury, partnerCurrencyId = sr, partnerAmount = riyals, amount = riyals * rate, exchangeRate = rate, branchId = fixture.BranchA }, Ct);
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            return (await response.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("receiptNo").GetString()!;
+        }
+        Task<decimal> Line(string refNo, string account, string column) => fixture.Database.ScalarAsync<decimal>($"SELECT COALESCE(SUM({column}),0) FROM dbo.Transactions WHERE RefNo=N'{refNo}' AND AccountId=N'{account}'", Ct);
+        Assert.Equal(HttpStatusCode.Created, (await Admin.PostAsJsonAsync("/api/receipts", new { type = "RECEIPT", partnerId = refs.Supplier, treasuryId = refs.Treasury, amount = 20000m, exchangeRate = 1m, branchId = fixture.BranchA }, Ct)).StatusCode);
+
+        // 100 SR booked at 50 (5,000) and paid from the main-currency till at 52: the extra 200 is an exchange loss.
+        await Buy();
+        var dearer = await Pay(100m, 52m);
+        Assert.Equal(5000m, await Line(dearer, $"PARTNER:{supplier}", "Debit"));
+        Assert.Equal(5200m, await Line(dearer, $"TREASURY:{refs.Treasury}", "Credit"));
+        Assert.Equal(200m, await Line(dearer, "5900", "Debit"));
+        Assert.Equal(0m, await fixture.Database.ScalarAsync<decimal>($"SELECT SUM(ForeignDebit-ForeignCredit) FROM dbo.Transactions WHERE PartnerId={supplier} AND CurrencyId={sr}", Ct));
+        Assert.Equal(0m, await fixture.Database.ScalarAsync<decimal>($"SELECT SUM(Debit-Credit) FROM dbo.Transactions WHERE PartnerId={supplier} AND CurrencyId={sr}", Ct));
+
+        // Paying 40 SR of a new 100 SR invoice at 45 is a 200 gain; paying 80 more at 50 settles 60 at the booked rate and books 20 as an advance.
+        await Buy();
+        var cheaper = await Pay(40m, 45m);
+        Assert.Equal(2000m, await Line(cheaper, $"PARTNER:{supplier}", "Debit"));
+        Assert.Equal(200m, await Line(cheaper, "4900", "Credit"));
+        var advance = await Pay(80m, 50m);
+        Assert.Equal(4000m, await Line(advance, $"PARTNER:{supplier}", "Debit"));
+        Assert.Equal(0m, await Line(advance, "4900", "Credit") + await Line(advance, "5900", "Debit"));
+        Assert.Equal(20m, await fixture.Database.ScalarAsync<decimal>($"SELECT SUM(ForeignDebit-ForeignCredit) FROM dbo.Transactions WHERE PartnerId={supplier} AND CurrencyId={sr}", Ct));
+
+        // The receipts list still shows the riyal-to-till rate, and the report counts only what left the till.
+        var listed = (await Admin.GetFromJsonAsync<JsonElement[]>("/api/receipts", Ct))!.Single(row => row.GetProperty("receiptNo").GetString() == dearer);
+        Assert.Equal(52m, listed.GetProperty("exchangeRate").GetDecimal());
+        Assert.Equal(5200m, listed.GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task An_expense_records_who_was_paid_when_they_have_no_account()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        Assert.Equal(HttpStatusCode.Created, (await Admin.PostAsJsonAsync("/api/receipts", new { type = "RECEIPT", partnerId = refs.Supplier, treasuryId = refs.Treasury, amount = 100m, exchangeRate = 1m, branchId = fixture.BranchA }, Ct)).StatusCode);
+        var response = await Admin.PostAsJsonAsync("/api/expenses", new { expenseAccountId = "5100", treasuryId = refs.Treasury, amount = 35m, payeeName = "Driver Hassan", description = "Delivery", branchId = fixture.BranchA }, Ct);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var expenseNo = (await response.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("expenseNo").GetString();
+        var listed = (await Admin.GetFromJsonAsync<JsonElement[]>("/api/expenses", Ct))!.Single(row => row.GetProperty("expenseNo").GetString() == expenseNo);
+        Assert.Equal("Driver Hassan", listed.GetProperty("payeeName").GetString());
+        Assert.Equal(35m, listed.GetProperty("amount").GetDecimal());
+    }
+
+    [Fact]
     public async Task A_rate_typed_against_the_primary_currency_wins_over_the_stored_rate()
     {
         SkipWithoutSqlServer();
