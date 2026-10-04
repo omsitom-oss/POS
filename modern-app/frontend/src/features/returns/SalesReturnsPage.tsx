@@ -8,7 +8,7 @@ import { InvoiceFinder } from './InvoiceFinder'
 import { SalesReturnEditor, type SalesReturnSource, type Treasury } from './SalesReturnEditor'
 import { money } from './returnModel'
 
-type SalesReturnRow = { salesReturnId: number; returnNo: string; returnDate: string; saleNo: string; customerName?: string | null; treasuryNameAr: string; treasuryNameEn: string; currencySymbol: string; total: number; lineCount: number }
+type SalesReturnRow = { salesReturnId: number; returnNo: string; returnDate: string; saleNo: string; customerName?: string | null; treasuryNameAr?: string | null; treasuryNameEn?: string | null; currencySymbol: string; total: number; lineCount: number }
 
 // Sales returns: the list of posted returns, and a new-return flow (choose invoice, then quantities).
 export function SalesReturnsPage({ locale }: { locale: Locale }) {
@@ -69,7 +69,7 @@ export function SalesReturnsPage({ locale }: { locale: Locale }) {
         <td>{row.returnDate.slice(0, 10)}</td>
         <td><code>{row.saleNo}</code></td>
         <td>{row.customerName ?? <span className="muted-cell">{ar ? 'بيع مباشر' : 'Walk-in'}</span>}</td>
-        <td>{ar ? row.treasuryNameAr : row.treasuryNameEn}</td>
+        <td>{(ar ? row.treasuryNameAr : row.treasuryNameEn) ?? <span className="muted-cell">{ar ? 'حساب العميل' : 'Customer account'}</span>}</td>
         <td className="numeric-cell">{row.lineCount}</td>
         <td className="numeric-cell">{money(row.total)} <small>{row.currencySymbol}</small></td>
       </tr>)}</tbody>
