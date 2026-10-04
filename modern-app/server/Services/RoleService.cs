@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using ElitePos.LocalService.Data;
 using ElitePos.LocalService.Models;
+using ElitePos.LocalService.Security;
 
 namespace ElitePos.LocalService.Services;
 
@@ -27,10 +28,18 @@ public sealed class RoleService(DbConnectionFactory factory)
             int roleId; if (id.HasValue) { await using var cmd = db.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "UPDATE dbo.Roles SET Name=@name,IsActive=@active,UpdatedAt=SYSUTCDATETIME() WHERE RoleId=@id"; Add(cmd,"@name",request.Name.Trim(),DbType.String,100); Add(cmd,"@active",request.IsActive,DbType.Boolean); Add(cmd,"@id",id.Value,DbType.Int32); if (await cmd.ExecuteNonQueryAsync(ct)==0) throw new RoleException("Role was not found.",404); roleId=id.Value; } else { await using var cmd = db.CreateCommand(); cmd.Transaction=tx; cmd.CommandText="INSERT INTO dbo.Roles(Name,IsActive) OUTPUT INSERTED.RoleId VALUES(@name,@active)"; Add(cmd,"@name",request.Name.Trim(),DbType.String,100); Add(cmd,"@active",request.IsActive,DbType.Boolean); roleId=Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)); }
             await using (var clear = db.CreateCommand()) { clear.Transaction=tx; clear.CommandText="DELETE FROM dbo.RolePermissions WHERE RoleId=@id"; Add(clear,"@id",roleId,DbType.Int32); await clear.ExecuteNonQueryAsync(ct); }
             foreach (var permissionId in (request.PermissionIds ?? []).Distinct()) { await using var link = db.CreateCommand(); link.Transaction=tx; link.CommandText="INSERT INTO dbo.RolePermissions(RoleId,PermissionId) SELECT @role,@permission WHERE EXISTS (SELECT 1 FROM dbo.Permissions WHERE PermissionId=@permission)"; Add(link,"@role",roleId,DbType.Int32); Add(link,"@permission",permissionId,DbType.Int32); await link.ExecuteNonQueryAsync(ct); }
+            if (id.HasValue && !await UserManagerGuard.AnyRemainsAsync(db, tx, ct)) throw new RoleException(UserManagerGuard.Message, 409);
             await tx.CommitAsync(ct); return (await GetAsync(true,ct)).First(item=>item.RoleId==roleId);
         } catch (Exception ex) when (ex.ToString().Contains("2601",StringComparison.Ordinal)||ex.ToString().Contains("2627",StringComparison.Ordinal)) { await tx.RollbackAsync(ct); throw new RoleException("That role name is already in use.",409); } catch { await tx.RollbackAsync(ct); throw; }
     }
-    public async Task<bool> SetActiveAsync(int id, bool active, CancellationToken ct) { await using var db=await OpenAsync(ct); await using var cmd=db.CreateCommand(); cmd.CommandText="UPDATE dbo.Roles SET IsActive=@active,UpdatedAt=SYSUTCDATETIME() WHERE RoleId=@id"; Add(cmd,"@active",active,DbType.Boolean); Add(cmd,"@id",id,DbType.Int32); return await cmd.ExecuteNonQueryAsync(ct)>0; }
+    public async Task<bool> SetActiveAsync(int id, bool active, CancellationToken ct)
+    {
+        await using var db=await OpenAsync(ct); await using var tx=await db.BeginTransactionAsync(ct);
+        await using var cmd=db.CreateCommand(); cmd.Transaction=tx; cmd.CommandText="UPDATE dbo.Roles SET IsActive=@active,UpdatedAt=SYSUTCDATETIME() WHERE RoleId=@id"; Add(cmd,"@active",active,DbType.Boolean); Add(cmd,"@id",id,DbType.Int32);
+        var changed=await cmd.ExecuteNonQueryAsync(ct)>0;
+        if (changed && !active && !await UserManagerGuard.AnyRemainsAsync(db, tx, ct)) { await tx.RollbackAsync(ct); throw new RoleException(UserManagerGuard.Message, 409); }
+        await tx.CommitAsync(ct); return changed;
+    }
     private async Task<DbConnection> OpenAsync(CancellationToken ct) { var db=factory.CreateConnection(); await db.OpenAsync(ct); return db; }
     private static void Add(DbCommand c,string n,object? v,DbType t,int? size=null) { var p=c.CreateParameter(); p.ParameterName=n; p.DbType=t; if(size.HasValue)p.Size=size.Value; p.Value=v??DBNull.Value; c.Parameters.Add(p); }
 }

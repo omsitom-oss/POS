@@ -140,6 +140,14 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Manual_journal_entries_need_journal_post_not_just_treasury_manage()
+    {
+        var client = authFactory.CreateClientAs(userId: 5, branchId: 1, permissions: [PermissionCodes.TreasuryView, PermissionCodes.TreasuryManage]);
+        var response = await client.PostAsJsonAsync("/api/transactions", new { transactionType = "MANUAL", currencyId = 1, exchangeRate = 1 }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     public static TheoryData<string, object> OtherBranchWrites => new()
     {
         { "/api/sales", new { treasuryId = 1, currencyId = 1, branchId = 2, lines = new[] { new { itemId = 1, quantity = 1, unitPrice = 5 } } } },
