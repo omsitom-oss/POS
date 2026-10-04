@@ -212,7 +212,7 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
                       {x.status === "DRAFT" ? <>
                         {x.purchaseType !== "IMPORT" && <IconButton label={ar ? "تأكيد الفاتورة" : "Confirm invoice"} onClick={() => void confirmDraft(x.purchaseId)}><Icon name="enable" size={18} /></IconButton>}
                         <IconButton label={ar ? "إلغاء الفاتورة" : "Cancel invoice"} onClick={() => void cancelDraft(x.purchaseId, x.purchaseType === "IMPORT")}><Icon name="disable" size={18} /></IconButton>
-                      </> : x.status === "POSTED" && x.purchaseType !== "IMPORT" && <IconButton label={ar ? "إرجاع" : "Return"} onClick={() => setError(ar ? "سيتم طلب اعتماد الإرجاع من مستخدم ذي صلاحية أعلى." : "Return approval is required from a higher-privilege user.")}><Icon name="swap" size={18} /></IconButton>}
+                      </> : x.status === "POSTED" && <IconButton label={ar ? "إرجاع" : "Return"} onClick={() => setError(ar ? "سيتم طلب اعتماد الإرجاع من مستخدم ذي صلاحية أعلى." : "Return approval is required from a higher-privilege user.")}><Icon name="swap" size={18} /></IconButton>}
                     </div>
                   </td>
                 </tr>
