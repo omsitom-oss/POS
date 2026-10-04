@@ -8,7 +8,7 @@ const chequeReceipt = { moveNo: 8, receiptNo: 'CHQ-IN-031026-0001', type: 'RECEI
 const routes = [
   { path: '/api/receipts', body: [chequeReceipt] },
   { path: '/api/partners/options', body: [{ partnerId: 4, partnerCode: 'C-4', partnerName: 'Al Noor Clinic', status: 'ACTIVE' }] },
-  { path: '/api/treasuries', body: [{ treasuryId: 2, treasuryCode: 'B-1', nameAr: 'حساب جاري', nameEn: 'Current account', treasureType: 'BANK', currencyId: 1, currencySymbol: 'AED', currencyCode: 'AED', isActive: true }] },
+  { path: '/api/treasuries', body: [{ treasuryId: 1, treasuryCode: 'T-1', nameAr: 'الصندوق', nameEn: 'Cash till', treasureType: 'CASH', currencyId: 1, currencySymbol: 'AED', currencyCode: 'AED', isActive: true }, { treasuryId: 2, treasuryCode: 'B-1', nameAr: 'حساب جاري', nameEn: 'Current account', treasureType: 'BANK', currencyId: 1, currencySymbol: 'AED', currencyCode: 'AED', isActive: true }] },
   { path: '/api/currencies', body: [{ currencyId: 1, currencyCode: 'AED', currencyNameEn: 'Dirham', currencyNameAr: 'درهم', symbol: 'AED', isPrimary: true, exchangeRate: 1, isActive: true, flagBase64: null }] },
   { path: /^\/api\/transactions\/partner\/4\/balance$/, body: { amount: 0, debit: 0, credit: 0, currencyId: 1, currencyCode: 'AED', currencySymbol: 'AED' } },
 ]
@@ -28,6 +28,8 @@ describe('ReceiptsPage', () => {
     const dialog = screen.getByRole('dialog')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cheque' }))
     expect(within(dialog).getByText('Deposit to (bank)')).toBeInTheDocument()
+    // The cash till is preselected for a cash receipt; a cheque moves to the bank treasury.
+    expect(within(dialog).getByText('Current account · AED')).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: /Save receipt/ }))
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Choose the partner')
 

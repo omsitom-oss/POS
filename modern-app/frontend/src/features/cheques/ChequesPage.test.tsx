@@ -13,7 +13,12 @@ const base: Cheque = {
 }
 const issued: Cheque = { ...base, chequeId: 2, direction: 'OUT', chequeNo: 'OUT-7', partnerName: 'Gulf Pharma', amount: 90, voucherNo: 'CHQ-OUT-031026-0002', dueDate: addDays(today(), -2) }
 const bounced: Cheque = { ...base, chequeId: 3, chequeNo: 'IN-99', status: 'BOUNCED', amount: 40, voucherNo: 'CHQ-IN-011026-0001' }
-const routes = [{ path: '/api/cheques', body: [base, issued, bounced] }]
+const treasuries = [
+  { treasuryId: 2, nameAr: 'حساب جاري', nameEn: 'Current account', treasureType: 'BANK', currencyId: 1, isActive: true, branchId: 1 },
+  { treasuryId: 5, nameAr: 'حساب التوفير', nameEn: 'Savings account', treasureType: 'BANK', currencyId: 1, isActive: true, branchId: 1 },
+  { treasuryId: 6, nameAr: 'الصندوق', nameEn: 'Cash till', treasureType: 'CASH', currencyId: 1, isActive: true, branchId: 1 },
+]
+const routes = [{ path: '/api/cheques', body: [base, issued, bounced] }, { path: '/api/treasuries', body: treasuries }]
 
 describe('ChequesPage', () => {
   it('lists cheques with due-soon and past-due summaries', async () => {
@@ -43,6 +48,20 @@ describe('ChequesPage', () => {
     expect(await screen.findByText('Cheque IN-100: Cleared')).toBeInTheDocument()
     const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/cheques/1/actions')!
     expect(JSON.parse(String(init?.body))).toEqual({ action: 'CLEAR', date: today(), note: 'Statement 12' })
+  })
+
+  it('deposits a received cheque to another bank treasury', async () => {
+    const fetchMock = mockFetch([...routes, { method: 'POST', path: '/api/cheques/1/actions', body: { cheque: { ...base, status: 'DEPOSITED', treasuryId: 5 }, events: [] } }])
+    render(<ChequesPage locale="en" canManage />)
+    await userEvent.click(within((await screen.findByText('IN-100')).closest('tr')!).getByRole('button', { name: 'Update' }))
+    const dialog = screen.getByRole('dialog')
+    await userEvent.click(within(dialog).getByText('Current account'))
+    expect(within(dialog).queryByText('Cash till')).not.toBeInTheDocument()
+    await userEvent.click(within(dialog).getByText('Savings account'))
+    await userEvent.click(within(dialog).getAllByRole('button', { name: 'Deposit' }).at(-1)!)
+    expect(await screen.findByText('Cheque IN-100: Deposited')).toBeInTheDocument()
+    const [, init] = fetchMock.mock.calls.find(([url]) => url === '/api/cheques/1/actions')!
+    expect(JSON.parse(String(init?.body))).toMatchObject({ action: 'DEPOSIT', treasuryId: 5 })
   })
 
   it('shows the server refusal inside the dialog', async () => {
