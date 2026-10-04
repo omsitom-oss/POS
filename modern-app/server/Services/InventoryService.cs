@@ -43,7 +43,7 @@ public sealed class InventoryService(DbConnectionFactory factory, TransactionSer
     public async Task<IReadOnlyList<InventoryBatchDto>> GetBatchesAsync(int branchId, long itemId, CancellationToken ct)
     {
         await using var db = factory.CreateConnection(); await db.OpenAsync(ct); await using var command = db.CreateCommand();
-        command.CommandText = "SELECT pl.PurchaseLineId,p.InvoiceNo,p.PurchaseDate,pl.Barcode,pl.ExpiryDate,pl.BatchNo,pl.Quantity,pl.Quantity-COALESCE((SELECT SUM(r.Quantity) FROM dbo.InventoryRequests r WHERE r.PurchaseLineId=pl.PurchaseLineId AND r.RequestType=N'INVENTORY_DISPOSAL' AND r.Status=N'APPROVED'),0)-COALESCE((SELECT SUM(rl.Quantity) FROM dbo.PurchaseReturnLines rl JOIN dbo.PurchaseReturns pr ON pr.PurchaseReturnId=rl.PurchaseReturnId WHERE rl.PurchaseLineId=pl.PurchaseLineId AND pr.Status=N'POSTED'),0),pl.UnitPrice FROM dbo.PurchaseLines pl JOIN dbo.Purchases p ON p.PurchaseId=pl.PurchaseId WHERE p.BranchId=@branch AND pl.ItemId=@item AND p.Status=N'POSTED' ORDER BY pl.ExpiryDate,p.PurchaseDate,pl.PurchaseLineId";
+        command.CommandText = $"SELECT pl.PurchaseLineId,p.InvoiceNo,p.PurchaseDate,pl.Barcode,pl.ExpiryDate,pl.BatchNo,pl.Quantity,{StockBatches.RemainingSql},pl.UnitPrice FROM dbo.PurchaseLines pl JOIN dbo.Purchases p ON p.PurchaseId=pl.PurchaseId WHERE p.BranchId=@branch AND pl.ItemId=@item AND p.Status=N'POSTED' ORDER BY pl.ExpiryDate,p.PurchaseDate,pl.PurchaseLineId";
         Add(command,"@branch",branchId,DbType.Int32); Add(command,"@item",itemId,DbType.Int64);
         var rows=new List<InventoryBatchDto>(); await using var reader=await command.ExecuteReaderAsync(ct); while(await reader.ReadAsync(ct)) rows.Add(new(reader.GetInt64(0),reader.GetString(1),reader.GetDateTime(2),reader.IsDBNull(3)?null:reader.GetString(3),reader.IsDBNull(4)?null:reader.GetDateTime(4),reader.GetString(5),reader.GetDecimal(6),reader.GetDecimal(7),reader.GetDecimal(8))); return rows;
     }
@@ -57,14 +57,14 @@ public sealed class InventoryService(DbConnectionFactory factory, TransactionSer
             var branch=request.BranchId ?? 0; if(branch<=0) throw new InventoryException("A valid branch is required.");
             await using var line=db.CreateCommand(); line.Transaction=tx; line.CommandText="SELECT p.BranchId,pl.ItemId,pl.PurchaseId,pl.Quantity,pl.UnitPrice FROM dbo.PurchaseLines pl JOIN dbo.Purchases p ON p.PurchaseId=pl.PurchaseId WHERE pl.PurchaseLineId=@line AND p.BranchId=@branch AND p.Status=N'POSTED'"; Add(line,"@line",request.PurchaseLineId,DbType.Int64); Add(line,"@branch",branch,DbType.Int32);
             await using var reader=await line.ExecuteReaderAsync(ct); if(!await reader.ReadAsync(ct)) throw new InventoryException("The selected batch was not found."); var item=reader.GetInt64(1); var purchase=reader.GetInt64(2); var available=reader.GetDecimal(3); var cost=reader.GetDecimal(4); await reader.CloseAsync(); if(item!=request.ItemId) throw new InventoryException("The selected batch does not belong to this item.");
-            await using var used=db.CreateCommand(); used.Transaction=tx; used.CommandText="SELECT COALESCE((SELECT SUM(Quantity) FROM dbo.InventoryRequests WHERE PurchaseLineId=@line AND RequestType=N'INVENTORY_DISPOSAL' AND Status IN (N'PENDING',N'APPROVED')),0)+COALESCE((SELECT SUM(rl.Quantity) FROM dbo.PurchaseReturnLines rl JOIN dbo.PurchaseReturns pr ON pr.PurchaseReturnId=rl.PurchaseReturnId WHERE rl.PurchaseLineId=@line AND pr.Status IN (N'PENDING',N'POSTED')),0)"; Add(used,"@line",request.PurchaseLineId,DbType.Int64); var already=Convert.ToDecimal(await used.ExecuteScalarAsync(ct)); if(request.Quantity>available-already) throw new InventoryException("The disposal quantity exceeds the available batch quantity.");
-            // Sales do not draw from batches, so the batch can look full after its stock was sold. The branch stock, less what
-            // pending disposals and pending purchase returns will take out, is the real limit.
+            // What is still in the batch, less pending disposals and pending purchase returns, is the batch limit; the branch stock
+            // check below also covers stock moved before batches were tracked.
+            if(request.Quantity>await StockBatches.FreeInBatchAsync(db,tx,request.PurchaseLineId,0,0,ct)) throw new InventoryException("The disposal quantity exceeds the available batch quantity.");
             if(request.Quantity>await BranchStockAsync(db,tx,branch,item,reserved:true,excludeRequestId:0,ct)) throw new InventoryException("The disposal quantity exceeds the stock in this branch.");
             var requires=true; await using(var setting=db.CreateCommand()){setting.Transaction=tx;setting.CommandText="SELECT COALESCE((SELECT RequiresApproval FROM dbo.ApprovalSettings WHERE RequestType=N'INVENTORY_DISPOSAL'),1)";requires=Convert.ToBoolean(await setting.ExecuteScalarAsync(ct));}
             await using var insert=db.CreateCommand(); insert.Transaction=tx; insert.CommandText="INSERT INTO dbo.InventoryRequests(RequestType,BranchId,ItemId,PurchaseLineId,Quantity,Reason,Status,RequestedBy) OUTPUT INSERTED.RequestId,INSERTED.CreatedAt VALUES(N'INVENTORY_DISPOSAL',@branch,@item,@line,@qty,@reason,N'PENDING',@requested)";
             Add(insert,"@branch",branch,DbType.Int32);Add(insert,"@item",item,DbType.Int64);Add(insert,"@line",request.PurchaseLineId,DbType.Int64);Add(insert,"@qty",request.Quantity,DbType.Decimal);Add(insert,"@reason",request.Reason.Trim(),DbType.String);Add(insert,"@requested",request.RequestedBy,DbType.Int32); await using var result=await insert.ExecuteReaderAsync(ct); await result.ReadAsync(ct); var requestId=result.GetInt64(0); var created=result.GetDateTime(1); await result.CloseAsync();
-            if(!requires) await PostDisposalAsync(db,tx,requestId,branch,item,purchase,request.Quantity,cost,request.RequestedBy,ct);
+            if(!requires) await PostDisposalAsync(db,tx,requestId,branch,item,purchase,request.PurchaseLineId,request.Quantity,cost,request.RequestedBy,ct);
             await tx.CommitAsync(ct);
             return new(requestId,"INVENTORY_DISPOSAL",item,request.PurchaseLineId,request.Quantity,request.Reason.Trim(),requires?"PENDING":"APPROVED",request.RequestedBy,created,requires?null:request.RequestedBy,requires?null:DateTime.UtcNow);
         }
@@ -83,7 +83,8 @@ public sealed class InventoryService(DbConnectionFactory factory, TransactionSer
             if(status!="PENDING") throw new InventoryException("Only pending requests can be approved.");
             // Stock may have been sold since the request was made.
             if(qty>await BranchStockAsync(db,tx,branch,item,reserved:false,excludeRequestId:requestId,ct)) throw new InventoryException("The disposal quantity exceeds the stock in this branch.");
-            await PostDisposalAsync(db,tx,requestId,branch,item,purchase,qty,cost,reviewerId,ct);
+            if(qty>await StockBatches.FreeInBatchAsync(db,tx,line,requestId,0,ct)) throw new InventoryException("The disposal quantity exceeds the available batch quantity.");
+            await PostDisposalAsync(db,tx,requestId,branch,item,purchase,line,qty,cost,reviewerId,ct);
             await tx.CommitAsync(ct);
             return new(requestId,"INVENTORY_DISPOSAL",item,line,qty,reason,"APPROVED",requested,created,reviewerId,DateTime.UtcNow);
         }
@@ -113,9 +114,9 @@ public sealed class InventoryService(DbConnectionFactory factory, TransactionSer
     }
 
     // Takes the stock out and writes the loss journal inside the caller's transaction.
-    private async Task PostDisposalAsync(DbConnection db,DbTransaction tx,long requestId,int branch,long item,long purchase,decimal quantity,decimal cost,int? reviewer,CancellationToken ct)
+    private async Task PostDisposalAsync(DbConnection db,DbTransaction tx,long requestId,int branch,long item,long purchase,long purchaseLine,decimal quantity,decimal cost,int? reviewer,CancellationToken ct)
     {
-        await using(var stock=db.CreateCommand()){stock.Transaction=tx;stock.CommandText="INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@purchase,@qty,@cost,N'POSTED')";Add(stock,"@branch",branch,DbType.Int32);Add(stock,"@item",item,DbType.Int64);Add(stock,"@purchase",purchase,DbType.Int64);Add(stock,"@qty",-quantity,DbType.Decimal);Add(stock,"@cost",cost,DbType.Decimal);await stock.ExecuteNonQueryAsync(ct);}
+        await using(var stock=db.CreateCommand()){stock.Transaction=tx;stock.CommandText="INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseId,PurchaseLineId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@purchase,@batch,@qty,@cost,N'POSTED')";Add(stock,"@branch",branch,DbType.Int32);Add(stock,"@item",item,DbType.Int64);Add(stock,"@purchase",purchase,DbType.Int64);Add(stock,"@batch",purchaseLine,DbType.Int64);Add(stock,"@qty",-quantity,DbType.Decimal);Add(stock,"@cost",cost,DbType.Decimal);await stock.ExecuteNonQueryAsync(ct);}
         await using(var update=db.CreateCommand()){update.Transaction=tx;update.CommandText="UPDATE dbo.InventoryRequests SET Status=N'APPROVED',ReviewedBy=@reviewer,ReviewedAt=SYSUTCDATETIME() WHERE RequestId=@id AND Status=N'PENDING'";Add(update,"@reviewer",reviewer,DbType.Int32);Add(update,"@id",requestId,DbType.Int64);if(await update.ExecuteNonQueryAsync(ct)!=1) throw new InventoryException("Only pending requests can be approved.");}
         var amount=quantity*cost;
         if(amount<=0) return;
