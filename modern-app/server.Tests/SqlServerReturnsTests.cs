@@ -267,7 +267,34 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
         await Admin.PostAsJsonAsync("/api/sales-returns", new { saleId = sale.Id, lines = new[] { new { lineId = line, quantity = 1m } } }, Ct);
         var after = await Admin.GetFromJsonAsync<JsonElement>($"/api/reports/summary?branchId={fixture.BranchA}", Ct);
         Assert.Equal(10m, after.GetProperty("salesReturnsTotal").GetDecimal() - before.GetProperty("salesReturnsTotal").GetDecimal());
-        Assert.Equal(10m, after.GetProperty("grossMargin").GetDecimal() - before.GetProperty("grossMargin").GetDecimal());
+        // Margin is net sales less cost of goods: 2 sold at 10 cost 2 x 5, 1 returned gives back 10 of sales and 5 of cost.
+        Assert.Equal(5m, after.GetProperty("grossMargin").GetDecimal() - before.GetProperty("grossMargin").GetDecimal());
+    }
+
+    [Fact]
+    public async Task A_sale_moves_its_cost_out_of_inventory_and_a_return_moves_it_back()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var x = await NewItemAsync("RP-COGS");
+        await BuyAsync(refs, 0, (x, 5, 4m, null));
+        var sale = await SellAsync(refs, 0, (x, 3, 10m));
+        var saleNo = await fixture.Database.ScalarAsync<string>($"SELECT SaleNo FROM dbo.Sales WHERE SaleId={sale.Id}", Ct);
+        Task<decimal> Sum(string refNo, string account, string column) => fixture.Database.ScalarAsync<decimal>($"SELECT COALESCE(SUM({column}),0) FROM dbo.Transactions WHERE RefNo=N'{refNo}' AND AccountId=N'{account}'", Ct);
+        Assert.Equal(12m, await Sum(saleNo, "5050", "Debit"));
+        Assert.Equal(12m, await Sum(saleNo, "1300", "Credit"));
+        Assert.Equal(30m, await Sum(saleNo, "4100", "Credit"));
+
+        var line = (await Admin.GetFromJsonAsync<JsonElement>($"/api/sales-returns/invoices/{sale.Id}", Ct)).GetProperty("lines")[0].GetProperty("saleLineId").GetInt64();
+        var response = await Admin.PostAsJsonAsync("/api/sales-returns", new { saleId = sale.Id, lines = new[] { new { lineId = line, quantity = 1m } } }, Ct);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var returnNo = await fixture.Database.ScalarAsync<string>($"SELECT TOP 1 ReturnNo FROM dbo.SalesReturns WHERE SaleId={sale.Id} ORDER BY SalesReturnId DESC", Ct);
+        Assert.Equal(4m, await Sum(returnNo, "1300", "Debit"));
+        Assert.Equal(4m, await Sum(returnNo, "5050", "Credit"));
+
+        // Expenses cannot be typed against the cost-of-goods account.
+        var expense = await Admin.PostAsJsonAsync("/api/expenses", new { expenseAccountId = "5050", treasuryId = refs.Treasury, amount = 1m, branchId = fixture.BranchA }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, expense.StatusCode);
     }
 
     private sealed record Refs(int Currency, int Treasury, int TreasuryB, int Supplier, int Unit);

@@ -14,7 +14,7 @@ import { LoginPage, type AuthSession } from '../features/auth/LoginPage'
 import { ChangePasswordPage } from '../features/auth/ChangePasswordPage'
 import { InventoryPage } from '../features/inventory/InventoryPage'
 import { ExpensesPage } from '../features/expenses/ExpensesPage'
-import { ImportPurchasePage } from '../features/purchases/ImportPurchasePage'
+import { ImportShipmentPage } from '../features/purchases/ImportShipmentPage'
 import { SalesPage } from '../features/sales/SalesPage'
 import { SalesReturnsPage } from '../features/returns/SalesReturnsPage'
 import { PurchaseReturnsPage } from '../features/returns/PurchaseReturnsPage'
@@ -140,13 +140,13 @@ function App() {
     : section === 'purchase-returns'
     ? <PurchaseReturnsPage locale={locale} canApprove={session.permissions.includes('PURCHASE_RETURN_APPROVE')} />
     : section === 'sales'
-    ? <SalesPage locale={locale} branchId={session.branchId} userId={session.userId} />
+    ? <SalesPage locale={locale} branchId={session.branchId} userId={session.userId} canOverridePrice={session.permissions.includes('SALES_PRICE_OVERRIDE')} />
     : section === 'reports'
     ? <ReportsPage locale={locale} />
     : section === 'purchases'
     ? <PurchasesPage locale={locale} onImport={(purchaseId) => { setPurchaseImportId(purchaseId); navigate('purchase-import') }} />
     : section === 'purchase-import'
-    ? <ImportPurchasePage locale={locale} purchaseId={purchaseImportId} onBack={() => { setPurchaseImportId(undefined); navigate('purchases') }} />
+    ? <ImportShipmentPage locale={locale} purchaseId={purchaseImportId} onBack={() => { setPurchaseImportId(undefined); navigate('purchases') }} />
     : section === 'inventory'
     ? <InventoryPage locale={locale} branchId={session.branchId} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} userId={session.userId} />
     : section === 'receipts'

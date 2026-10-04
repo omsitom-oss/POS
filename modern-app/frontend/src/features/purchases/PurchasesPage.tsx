@@ -112,9 +112,10 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
     if (!response.ok) { setError(await response.text()); return; }
     await load();
   }
-  async function cancelDraft(purchaseId: number) {
-    if (!window.confirm(ar ? "هل تريد إلغاء وحذف الفاتورة المبدئية؟" : "Cancel and delete this draft invoice?")) return;
-    const response = await fetch(`/api/purchases/${purchaseId}`, { method: "DELETE" });
+  // An import draft is cancelled with reversing entries and kept; a local draft has no entries and is deleted.
+  async function cancelDraft(purchaseId: number, isImport: boolean) {
+    if (!window.confirm(isImport ? (ar ? "سيتم إلغاء الشحنة وعكس قيودها. هل تريد المتابعة؟" : "Cancel this shipment and reverse its entries?") : (ar ? "هل تريد إلغاء وحذف الفاتورة المبدئية؟" : "Cancel and delete this draft invoice?"))) return;
+    const response = await fetch(isImport ? `/api/imports/${purchaseId}/cancel` : `/api/purchases/${purchaseId}`, { method: isImport ? "POST" : "DELETE" });
     if (!response.ok) { setError(await response.text()); return; }
     await load();
   }
@@ -193,16 +194,8 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
                   <td>{formatPurchaseDate(x.purchaseDate)}</td>
                   <td>{x.supplierName}</td>
                   <td>
-                    <StatusBadge
-                      tone={x.status === "POSTED" ? "success" : "neutral"}
-                    >
-                      {x.status === "POSTED"
-                        ? ar
-                          ? "نهائية"
-                          : "Posted"
-                        : ar
-                          ? "مسودة"
-                          : "Draft"}
+                    <StatusBadge tone={x.status === "POSTED" ? "success" : x.status === "CANCELLED" ? "danger" : "neutral"}>
+                      {x.status === "POSTED" ? (ar ? "نهائية" : "Posted") : x.status === "CANCELLED" ? (ar ? "ملغاة" : "Cancelled") : ar ? "مسودة" : "Draft"}
                     </StatusBadge>
                   </td>
                   <td>
@@ -218,8 +211,8 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
                       <IconButton label={ar ? "طباعة" : "Print"} onClick={() => void printPurchase(x.purchaseId)}><Icon name="document" size={18} /></IconButton>
                       {x.status === "DRAFT" ? <>
                         {x.purchaseType !== "IMPORT" && <IconButton label={ar ? "تأكيد الفاتورة" : "Confirm invoice"} onClick={() => void confirmDraft(x.purchaseId)}><Icon name="enable" size={18} /></IconButton>}
-                        <IconButton label={ar ? "إلغاء الفاتورة" : "Cancel invoice"} onClick={() => void cancelDraft(x.purchaseId)}><Icon name="disable" size={18} /></IconButton>
-                      </> : <IconButton label={ar ? "إرجاع" : "Return"} onClick={() => setError(ar ? "سيتم طلب اعتماد الإرجاع من مستخدم ذي صلاحية أعلى." : "Return approval is required from a higher-privilege user.")}><Icon name="swap" size={18} /></IconButton>}
+                        <IconButton label={ar ? "إلغاء الفاتورة" : "Cancel invoice"} onClick={() => void cancelDraft(x.purchaseId, x.purchaseType === "IMPORT")}><Icon name="disable" size={18} /></IconButton>
+                      </> : x.status === "POSTED" && <IconButton label={ar ? "إرجاع" : "Return"} onClick={() => setError(ar ? "سيتم طلب اعتماد الإرجاع من مستخدم ذي صلاحية أعلى." : "Return approval is required from a higher-privilege user.")}><Icon name="swap" size={18} /></IconButton>}
                     </div>
                   </td>
                 </tr>

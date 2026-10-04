@@ -56,10 +56,10 @@ public sealed class SqlServerStockIntegrityTests(SqlServerApiFixture fixture) : 
         var line = await LineOfAsync(purchase);
         await SellAsync(refs, x, 4, 8m);
 
-        // The batch still shows 5, but only 1 is left in the branch.
+        // The sale took 4 out of this batch, so only 1 is left in it.
         var tooMany = await Admin.PostAsJsonAsync("/api/inventory/disposals", new { itemId = x, purchaseLineId = line, quantity = 2m, reason = "Expired" }, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
-        Assert.Contains("stock in this branch", await tooMany.Content.ReadAsStringAsync(Ct));
+        Assert.Contains("available batch quantity", await tooMany.Content.ReadAsStringAsync(Ct));
 
         var pending = await Admin.PostAsJsonAsync("/api/inventory/disposals", new { itemId = x, purchaseLineId = line, quantity = 1m, reason = "Expired" }, Ct);
         Assert.Equal(HttpStatusCode.Created, pending.StatusCode);
