@@ -3,7 +3,7 @@ import { Button, Card, DateInput, EmptyState, ErrorState, FormField, LoadingStat
 import { useLoadEffect } from '../../components/useLoadEffect'
 import { usePagination } from '../../components/usePagination'
 import { PageHeader, type Locale } from '../../layouts/AppLayout'
-import { actionEffect, actionLabels, addDays, allowedActions, dueDateTotals, isOpen, money, statusLabels, statusTones, sumByCurrency, today, type Cheque, type ChequeAction, type ChequeDetail, type ChequeStatus } from './chequeModel'
+import { actionEffect, actionLabels, addDays, allowedActions, dueDateTotals, isOpen, money, statusLabels, statusTones, sumByCurrency, today, type BankTreasury, type Cheque, type ChequeAction, type ChequeDetail, type ChequeStatus } from './chequeModel'
 
 type View = 'ALL' | 'IN' | 'OUT' | 'TOTALS'
 const statuses: ChequeStatus[] = ['PENDING', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'RETURNED', 'CANCELLED']
@@ -27,13 +27,16 @@ export function ChequesPage({ locale, canManage }: { locale: Locale; canManage: 
   const [moveError, setMoveError] = useState('')
   const [saving, setSaving] = useState(false)
   const [history, setHistory] = useState<ChequeDetail | null>(null)
+  const [treasuries, setTreasuries] = useState<BankTreasury[]>([])
+  const [depositBank, setDepositBank] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const response = await fetch('/api/cheques')
+      const [response, treasuryResponse] = await Promise.all([fetch('/api/cheques'), fetch('/api/treasuries')])
       if (!response.ok) throw new Error(ar ? 'تعذر تحميل الشيكات.' : 'Could not load cheques.')
       setRows(await response.json() as Cheque[])
+      setTreasuries(treasuryResponse.ok ? await treasuryResponse.json() as BankTreasury[] : [])
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) } finally { setLoading(false) }
   }, [ar])
   useLoadEffect(load)
@@ -54,13 +57,13 @@ export function ChequesPage({ locale, canManage }: { locale: Locale; canManage: 
   const overdue = open.filter(row => row.dueDate.slice(0, 10) < now)
   const dueIn = (direction: 'IN' | 'OUT') => open.filter(row => row.direction === direction && row.dueDate.slice(0, 10) >= now && row.dueDate.slice(0, 10) <= weekEnd)
 
-  function startMove(cheque: Cheque, action: ChequeAction) { setMove({ cheque, action }); setMoveDate(today()); setNote(''); setMoveError('') }
+  function startMove(cheque: Cheque, action: ChequeAction) { setMove({ cheque, action }); setDepositBank(String(cheque.treasuryId)); setMoveDate(today()); setNote(''); setMoveError('') }
 
   async function submitMove() {
     if (!move) return
     setSaving(true); setMoveError('')
     try {
-      const response = await fetch(`/api/cheques/${move.cheque.chequeId}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: move.action, date: moveDate, note: note.trim() || null }) })
+      const response = await fetch(`/api/cheques/${move.cheque.chequeId}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: move.action, date: moveDate, note: note.trim() || null, ...(move.action === 'DEPOSIT' ? { treasuryId: Number(depositBank) } : {}) }) })
       if (!response.ok) { const problem = await response.json().catch(() => null) as { detail?: string } | null; throw new Error(problem?.detail ?? (ar ? 'تعذر تنفيذ العملية.' : 'The request failed.')) }
       const result = await response.json() as ChequeDetail
       setNotice(`${ar ? 'الشيك' : 'Cheque'} ${result.cheque.chequeNo}: ${statusLabels[result.cheque.status][ar ? 0 : 1]}`)
@@ -82,6 +85,8 @@ export function ChequesPage({ locale, canManage }: { locale: Locale; canManage: 
   const directionLabel = (direction: 'IN' | 'OUT') => direction === 'IN' ? (ar ? 'وارد' : 'Received') : (ar ? 'صادر' : 'Issued')
   const statusText = (value: ChequeStatus) => statusLabels[value][ar ? 0 : 1]
   const moveOptions = move ? allowedActions(move.cheque.direction, move.cheque.status) : []
+  // Banks a received cheque can be deposited to: active bank treasuries of its branch, in its currency.
+  const depositBanks = move ? treasuries.filter(item => item.treasureType === 'BANK' && item.isActive && item.currencyId === move.cheque.currencyId && (item.branchId == null || item.branchId === move.cheque.branchId)) : []
 
   return <div className="settings-page" dir={ar ? 'rtl' : 'ltr'}>
     <PageHeader eyebrow={ar ? 'المعاملات المالية' : 'FINANCE'} title={ar ? 'الشيكات' : 'Cheques'} description={ar ? 'متابعة الشيكات الواردة والصادرة حتى صرفها أو ارتجاعها. تُسجَّل الشيكات من الإيصالات باختيار طريقة الدفع شيك.' : 'Follow received and issued cheques until they clear or bounce. Record a cheque from Receipts with payment method Cheque.'} />
@@ -141,6 +146,10 @@ export function ChequesPage({ locale, canManage }: { locale: Locale; canManage: 
       {move && <div className="settings-form">
         <div className="form-field grid-full"><span className="field-label">{ar ? 'الإجراء' : 'Action'}</span><div className="inventory-row-actions" role="group" aria-label={ar ? 'الإجراء' : 'Action'}>{moveOptions.map(action => <Button key={action} size="small" variant={move.action === action ? 'primary' : 'outline'} aria-pressed={move.action === action} onClick={() => setMove({ ...move, action })}>{actionLabels[action][ar ? 0 : 1]}</Button>)}</div></div>
         <p className="dialog-message grid-full">{actionEffect(move.cheque, move.action, ar)}</p>
+        {move.action === 'DEPOSIT' && <FormField label={ar ? 'يودع في (البنك)' : 'Deposit to (bank)'} required><Select aria-label={ar ? 'يودع في (البنك)' : 'Deposit to (bank)'} value={depositBank} onChange={event => setDepositBank(event.target.value)}>
+          {!depositBanks.some(item => item.treasuryId === move.cheque.treasuryId) && <option value={move.cheque.treasuryId}>{ar ? move.cheque.treasuryNameAr : move.cheque.treasuryNameEn}</option>}
+          {depositBanks.map(item => <option key={item.treasuryId} value={item.treasuryId}>{ar ? item.nameAr : item.nameEn}</option>)}
+        </Select></FormField>}
         <FormField label={ar ? 'التاريخ' : 'Date'} hint={ar ? 'تاريخ القيد هو يوم حدوث العملية.' : 'The entry is dated the day this happened.'} required><DateInput value={moveDate} min={move.cheque.voucherDate.slice(0, 10)} onChange={event => setMoveDate(event.target.value)} /></FormField>
         <FormField label={ar ? 'ملاحظة' : 'Note'}><textarea className="text-input" rows={2} maxLength={250} value={note} onChange={event => setNote(event.target.value)} /></FormField>
         {moveError && <div className="receipt-form-error grid-full" role="alert">{moveError}</div>}
@@ -152,7 +161,7 @@ export function ChequesPage({ locale, canManage }: { locale: Locale; canManage: 
       footer={<Button variant="secondary" onClick={() => setHistory(null)}>{ar ? 'إغلاق' : 'Close'}</Button>}>
       {history && <div className="receipts-table-wrap"><table className="receipts-table">
         <thead><tr><th>{ar ? 'التاريخ' : 'Date'}</th><th>{ar ? 'الحالة' : 'Status'}</th><th>{ar ? 'بواسطة' : 'By'}</th><th>{ar ? 'وقت التسجيل' : 'Recorded at'}</th><th>{ar ? 'ملاحظة' : 'Note'}</th></tr></thead>
-        <tbody>{history.events.map(event => <tr key={event.chequeEventId}><td>{event.eventDate.slice(0, 10)}</td><td><StatusBadge tone={statusTones[event.toStatus]}>{statusText(event.toStatus)}</StatusBadge></td><td>{event.savedByName ?? '—'}</td><td>{new Date(event.savedAt.endsWith('Z') ? event.savedAt : `${event.savedAt}Z`).toLocaleString(ar ? 'ar' : 'en-GB')}</td><td>{event.note ?? '—'}</td></tr>)}</tbody>
+        <tbody>{history.events.map(event => <tr key={event.chequeEventId}><td>{event.eventDate.slice(0, 10)}</td><td><StatusBadge tone={statusTones[event.toStatus]}>{statusText(event.toStatus)}</StatusBadge></td><td>{event.savedByName ?? '—'}</td><td>{new Date(event.savedAt.endsWith('Z') ? event.savedAt : `${event.savedAt}Z`).toLocaleString(ar ? 'ar' : 'en-GB')}</td><td>{[event.treasuryId ? (ar ? event.treasuryNameAr : event.treasuryNameEn) : null, event.note].filter(Boolean).join(' · ') || '—'}</td></tr>)}</tbody>
       </table></div>}
     </Modal>
   </div>

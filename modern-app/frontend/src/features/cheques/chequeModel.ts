@@ -12,7 +12,8 @@ export type Cheque = {
   voucherNo: string; voucherDate: string; description: string | null
   status: ChequeStatus; statusDate: string | null; statusByName: string | null; statusAt: string | null; savedByName: string | null; createdAt: string
 }
-export type ChequeEvent = { chequeEventId: number; fromStatus: ChequeStatus | null; toStatus: ChequeStatus; eventDate: string; moveNo: number | null; note: string | null; savedByName: string | null; savedAt: string }
+export type ChequeEvent = { chequeEventId: number; fromStatus: ChequeStatus | null; toStatus: ChequeStatus; eventDate: string; moveNo: number | null; note: string | null; savedByName: string | null; savedAt: string; treasuryId: number | null; treasuryNameAr: string | null; treasuryNameEn: string | null }
+export type BankTreasury = { treasuryId: number; nameAr: string; nameEn: string; treasureType: string; currencyId: number; isActive: boolean; branchId?: number | null }
 export type ChequeDetail = { cheque: Cheque; events: ChequeEvent[] }
 
 export const statusLabels: Record<ChequeStatus, [string, string]> = {
@@ -42,7 +43,7 @@ export function allowedActions(direction: Direction, status: ChequeStatus): Cheq
 // What the move posts, in words, so the user knows which balances change before confirming.
 export function actionEffect(cheque: Pick<Cheque, 'direction' | 'status'>, action: ChequeAction, ar: boolean) {
   const received = cheque.direction === 'IN'
-  if (action === 'DEPOSIT') return ar ? 'تُسجَّل الحالة فقط، ولا يتغير أي رصيد حتى يُصرف الشيك.' : 'Only the status changes. No balance moves until the cheque clears.'
+  if (action === 'DEPOSIT') return ar ? 'يُسلَّم الشيك إلى الحساب البنكي المختار، ولا يتغير أي رصيد حتى يُصرف.' : 'The cheque goes to the chosen bank treasury. No balance moves until it clears.'
   if (action === 'CLEAR') return received
     ? (ar ? 'يزيد رصيد البنك وينخفض حساب الشيكات برسم التحصيل.' : 'The bank balance goes up and cheques under collection go down.')
     : (ar ? 'ينخفض رصيد البنك وحساب الشيكات المستحقة الدفع.' : 'The bank balance and cheques payable go down.')

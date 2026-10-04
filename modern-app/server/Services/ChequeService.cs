@@ -9,7 +9,7 @@ namespace ElitePos.LocalService.Services;
 // them and moves them through their statuses. Every move is dated on the day it happens (or the date the user gives),
 // records who did it, and posts its journal in the same database transaction as the status change.
 //
-//   Received: PENDING -> DEPOSITED (no journal) -> CLEARED      bank        / under collection
+//   Received: PENDING -> DEPOSITED (moves the cheque to a bank treasury, no journal) -> CLEARED   bank / under collection
 //             PENDING or DEPOSITED -> BOUNCED                   customer    / under collection
 //             PENDING -> RETURNED (handed back to the customer) customer    / under collection
 //             CLEARED -> BOUNCED (the bank reverses it)         customer    / bank
@@ -19,7 +19,7 @@ namespace ElitePos.LocalService.Services;
 public sealed class ChequeService(DbConnectionFactory factory, TransactionService transactions)
 {
     public const string UnderCollectionAccount = "1250";
-    public const string PayableAccount = "2200";
+    public const string PayableAccount = "2150";
     private static readonly string[] Statuses = ["PENDING", "DEPOSITED", "CLEARED", "BOUNCED", "RETURNED", "CANCELLED"];
 
     private const string ListSql = """
@@ -75,11 +75,11 @@ public sealed class ChequeService(DbConnectionFactory factory, TransactionServic
         var events = new List<ChequeEvent>();
         await using (var command = db.CreateCommand())
         {
-            command.CommandText = "SELECT e.ChequeEventId,e.FromStatus,e.ToStatus,e.EventDate,e.MoveNo,e.Note,u.UserName,e.SavedAt FROM dbo.ChequeEvents e LEFT JOIN dbo.Users u ON u.UserId=e.SavedBy WHERE e.ChequeId=@id ORDER BY e.ChequeEventId";
+            command.CommandText = "SELECT e.ChequeEventId,e.FromStatus,e.ToStatus,e.EventDate,e.MoveNo,e.Note,u.UserName,e.SavedAt,e.TreasuryId,t.NameAr,t.NameEn FROM dbo.ChequeEvents e LEFT JOIN dbo.Users u ON u.UserId=e.SavedBy LEFT JOIN dbo.Treasuries t ON t.TreasuryId=e.TreasuryId WHERE e.ChequeId=@id ORDER BY e.ChequeEventId";
             Add(command, "@id", chequeId, DbType.Int32);
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
-                events.Add(new(reader.GetInt64(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetString(2), reader.GetDateTime(3), reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetDateTime(7)));
+                events.Add(new(reader.GetInt64(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.GetString(2), reader.GetDateTime(3), reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetDateTime(7), reader.IsDBNull(8) ? null : reader.GetInt32(8), reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10)));
         }
         return new(cheque, events);
     }
@@ -101,6 +101,14 @@ public sealed class ChequeService(DbConnectionFactory factory, TransactionServic
             var target = Transition(cheque.Direction, cheque.Status, action);
             if (date < cheque.VoucherDate) throw new ChequeException("The date cannot be before the voucher date.");
             if (cheque.StatusDate is { } last && date < last) throw new ChequeException("The date cannot be before the cheque's last status change.");
+            int? bank = null;
+            if (target == "DEPOSITED")
+            {
+                // Depositing hands the cheque to a bank treasury of the same branch and currency; the money still moves only on clearing.
+                bank = request.TreasuryId ?? cheque.TreasuryId;
+                if (bank != cheque.TreasuryId) await EnsureBankAsync(db, tx, bank.Value, cheque, ct);
+            }
+            else if (request.TreasuryId is not null && request.TreasuryId != cheque.TreasuryId) throw new ChequeException("A bank can only be chosen when depositing a cheque.");
 
             int? moveNo = null;
             if (Lines(cheque, cheque.Status, target) is { } lines)
@@ -114,11 +122,11 @@ public sealed class ChequeService(DbConnectionFactory factory, TransactionServic
             await using (var update = db.CreateCommand())
             {
                 update.Transaction = tx;
-                update.CommandText = "UPDATE dbo.Cheques SET Status=@status,StatusDate=@date,StatusBy=@user,StatusAt=SYSUTCDATETIME() WHERE ChequeId=@id";
-                Add(update, "@status", target, DbType.String, 20); Add(update, "@date", date, DbType.Date); Add(update, "@user", userId, DbType.Int32); Add(update, "@id", chequeId, DbType.Int32);
+                update.CommandText = "UPDATE dbo.Cheques SET Status=@status,TreasuryId=COALESCE(@bank,TreasuryId),StatusDate=@date,StatusBy=@user,StatusAt=SYSUTCDATETIME() WHERE ChequeId=@id";
+                Add(update, "@status", target, DbType.String, 20); Add(update, "@bank", bank, DbType.Int32); Add(update, "@date", date, DbType.Date); Add(update, "@user", userId, DbType.Int32); Add(update, "@id", chequeId, DbType.Int32);
                 await update.ExecuteNonQueryAsync(ct);
             }
-            await AddEventAsync(db, tx, chequeId, cheque.Status, target, date, moveNo, note, userId, ct);
+            await AddEventAsync(db, tx, chequeId, cheque.Status, target, date, moveNo, note, userId, ct, bank);
             await tx.CommitAsync(ct);
         }
         catch
@@ -129,11 +137,12 @@ public sealed class ChequeService(DbConnectionFactory factory, TransactionServic
         return await GetByIdAsync(chequeId, ct);
     }
 
-    internal static async Task AddEventAsync(DbConnection db, DbTransaction tx, int chequeId, string? from, string to, DateTime date, int? moveNo, string? note, int? userId, CancellationToken ct)
+    internal static async Task AddEventAsync(DbConnection db, DbTransaction tx, int chequeId, string? from, string to, DateTime date, int? moveNo, string? note, int? userId, CancellationToken ct, int? treasuryId = null)
     {
         await using var insert = db.CreateCommand();
         insert.Transaction = tx;
-        insert.CommandText = "INSERT INTO dbo.ChequeEvents(ChequeId,FromStatus,ToStatus,EventDate,MoveNo,Note,SavedBy) VALUES(@id,@from,@to,@date,@move,@note,@user)";
+        insert.CommandText = "INSERT INTO dbo.ChequeEvents(ChequeId,FromStatus,ToStatus,EventDate,MoveNo,TreasuryId,Note,SavedBy) VALUES(@id,@from,@to,@date,@move,@treasury,@note,@user)";
+        Add(insert, "@treasury", treasuryId, DbType.Int32);
         Add(insert, "@id", chequeId, DbType.Int32); Add(insert, "@from", from, DbType.String, 20); Add(insert, "@to", to, DbType.String, 20); Add(insert, "@date", date.Date, DbType.Date);
         Add(insert, "@move", moveNo, DbType.Int32); Add(insert, "@note", note, DbType.String, 250); Add(insert, "@user", userId, DbType.Int32);
         await insert.ExecuteNonQueryAsync(ct);
@@ -175,6 +184,19 @@ public sealed class ChequeService(DbConnectionFactory factory, TransactionServic
             ("OUT", "BOUNCED" or "CANCELLED") => [settled ? Treasury(true) : Holding(true), Partner(false)],
             _ => throw new ChequeException("Unsupported cheque move."),
         };
+    }
+
+    private static async Task EnsureBankAsync(DbConnection db, DbTransaction tx, int treasuryId, ChequeState cheque, CancellationToken ct)
+    {
+        await using var command = db.CreateCommand();
+        command.Transaction = tx;
+        command.CommandText = "SELECT TreasureType,CurrencyId,IsActive FROM dbo.Treasuries WHERE TreasuryId=@id AND BranchId=@branch";
+        Add(command, "@id", treasuryId, DbType.Int32); Add(command, "@branch", cheque.BranchId, DbType.Int32);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) throw new ChequeException("Bank treasury was not found.", 404);
+        if (reader.GetString(0) != "BANK") throw new ChequeException("A cheque can only be deposited to a bank treasury.");
+        if (reader.GetInt32(1) != cheque.CurrencyId) throw new ChequeException("The bank treasury must be in the cheque's currency.");
+        if (!reader.GetBoolean(2)) throw new ChequeException("An inactive treasury cannot be used.");
     }
 
     private static string Past(string action) => action switch { "DEPOSIT" => "deposited", "CLEAR" => "cleared", "BOUNCE" => "bounced", "RETURN" => "returned", _ => "cancelled" };

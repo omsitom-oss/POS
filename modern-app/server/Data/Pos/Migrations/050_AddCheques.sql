@@ -1,5 +1,5 @@
 -- Received and issued cheques. A cheque is created by a receipt or payment voucher paid by cheque; the voucher posts
--- the partner against cheques under collection (1250) or cheques payable (2200), and the bank treasury is only hit
+-- the partner against cheques under collection (1250) or cheques payable (2150), and the bank treasury is only hit
 -- when the cheque clears. Every status change is kept in ChequeEvents with its business date, user and time.
 IF OBJECT_ID(N'dbo.Cheques', N'U') IS NULL
 BEGIN
@@ -52,24 +52,27 @@ BEGIN
         ToStatus nvarchar(20) NOT NULL,
         EventDate date NOT NULL,
         MoveNo int NULL,
+        TreasuryId int NULL,
         Note nvarchar(250) NULL,
         SavedBy int NULL,
         SavedAt datetime2(3) NOT NULL CONSTRAINT DF_ChequeEvents_SavedAt DEFAULT SYSUTCDATETIME(),
         CONSTRAINT FK_ChequeEvents_Cheque FOREIGN KEY (ChequeId) REFERENCES dbo.Cheques(ChequeId),
+        CONSTRAINT FK_ChequeEvents_Treasury FOREIGN KEY (TreasuryId) REFERENCES dbo.Treasuries(TreasuryId),
         CONSTRAINT FK_ChequeEvents_User FOREIGN KEY (SavedBy) REFERENCES dbo.Users(UserId)
     );
     CREATE INDEX IX_ChequeEvents_Cheque ON dbo.ChequeEvents(ChequeId, ChequeEventId);
 END;
 
--- Holding accounts for cheques that are recorded but not yet cleared, in every branch that has a chart of accounts.
-INSERT INTO dbo.Accounts(BranchId,AccountCode,NameAr,NameEn,AccountType)
-SELECT b.BranchId,v.Code,v.NameAr,v.NameEn,v.AccountType
-FROM (SELECT DISTINCT BranchId FROM dbo.Accounts WHERE AccountCode=N'1000') b
-CROSS JOIN (VALUES
-    (N'1250',N'شيكات برسم التحصيل',N'Cheques under collection',N'ASSET'),
-    (N'2200',N'شيكات مستحقة الدفع',N'Cheques payable',N'LIABILITY')
-) v(Code,NameAr,NameEn,AccountType)
-WHERE NOT EXISTS (SELECT 1 FROM dbo.Accounts a WHERE a.BranchId=b.BranchId AND a.AccountCode=v.Code);
+-- Holding accounts for cheques that are recorded but not yet cleared, in every branch that has a chart of accounts:
+-- cheques under collection under trade debtors (1200) and cheques payable under trade creditors (2100).
+INSERT INTO dbo.Accounts(BranchId,AccountCode,NameAr,NameEn,AccountType,ParentAccountId)
+SELECT parent.BranchId,v.Code,v.NameAr,v.NameEn,v.AccountType,parent.AccountId
+FROM (VALUES
+    (N'1250',N'شيكات برسم التحصيل',N'Cheques under collection',N'ASSET',N'1200'),
+    (N'2150',N'شيكات مستحقة الدفع',N'Cheques payable',N'LIABILITY',N'2100')
+) v(Code,NameAr,NameEn,AccountType,ParentCode)
+JOIN dbo.Accounts parent ON parent.AccountCode=v.ParentCode
+WHERE NOT EXISTS (SELECT 1 FROM dbo.Accounts a WHERE a.BranchId=parent.BranchId AND a.AccountCode=v.Code);
 
 -- Clearing, bouncing, returning and cancelling cheques is its own permission (legacy ChCheques). Recording a cheque
 -- voucher stays under TREASURY_MANAGE like any receipt. Roles that already hold USER_MANAGEMENT get it.

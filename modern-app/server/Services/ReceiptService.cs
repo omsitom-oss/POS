@@ -36,6 +36,11 @@ public sealed class ReceiptService(DbConnectionFactory factory, TransactionServi
         var direction = type == "RECEIPT" ? "IN" : "OUT";
         var holdingLine = new TransactionLineRequest(direction == "IN" ? ChequeService.UnderCollectionAccount : ChequeService.PayableAccount, null, null, type == "RECEIPT" ? request.Amount : 0, type == "RECEIPT" ? 0 : request.Amount, type == "RECEIPT" ? request.Amount : 0, type == "RECEIPT" ? 0 : request.Amount, details.CurrencyId, 1);
         var chequeNo = request.ChequeNo!.Trim();
+        await using (var bank = db.CreateCommand())
+        {
+            bank.CommandText = "SELECT TreasureType FROM dbo.Treasuries WHERE TreasuryId=@id"; Add(bank, "@id", request.TreasuryId, DbType.Int32);
+            if (!string.Equals(Convert.ToString(await bank.ExecuteScalarAsync(ct)), "BANK", StringComparison.Ordinal)) throw new ReceiptException("A cheque must be drawn on or deposited to a bank treasury.");
+        }
         await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
         {
