@@ -66,7 +66,11 @@ public sealed class SqlServerImportTests(SqlServerApiFixture fixture) : IClassFi
         await FundTillAsync(refs, 500m);
         var till = await TillBalanceAsync(refs);
         Assert.Equal(HttpStatusCode.OK, (await AddCostAsync(id, new { costType = "FREIGHT", amount = 200m, currencyId = refs.Foreign, exchangeRateToBase = Rate, payeeType = "PARTNER", payeePartnerId = refs.Shipper })).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await AddCostAsync(id, new { costType = "CUSTOMS", amount = 300m, currencyId = refs.Primary, exchangeRateToBase = 1m, payeeType = "TREASURY", payeeTreasuryId = refs.Till })).StatusCode);
+        var customs = await AddCostAsync(id, new { costType = "CUSTOMS", amount = 300m, currencyId = refs.Primary, exchangeRateToBase = 1m, payeeType = "TREASURY", payeeTreasuryId = refs.Till, paidTo = "Port broker" });
+        Assert.Equal(HttpStatusCode.OK, customs.StatusCode);
+        // Someone with no account in the system is named on the till payment.
+        Assert.Equal("Port broker", (await customs.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("costs")[1].GetProperty("paidTo").GetString());
+        Assert.Equal("Port broker", await fixture.Database.ScalarAsync<string>($"SELECT TOP 1 PayeeName FROM dbo.Transactions WHERE RefNo LIKE N'{invoice}:COST:%' AND TreasuryId={refs.Till}", Ct));
         var accrued = await AddCostAsync(id, new { costType = "CLEARANCE", amount = 50m, currencyId = refs.Primary, exchangeRateToBase = 9m, payeeType = "ACCOUNT", payeeAccountCode = "2200" });
         Assert.Equal(HttpStatusCode.OK, accrued.StatusCode);
 

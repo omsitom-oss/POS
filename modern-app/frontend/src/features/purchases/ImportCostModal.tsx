@@ -95,6 +95,11 @@ export function ImportCostModal({ ar, open, initial, editing, saving, error, cur
               </Select>
             </FormField>
           )}
+          {draft.payeeType === 'TREASURY' && (
+            <FormField label={ar ? 'المستلم' : 'Paid to'} hint={ar ? 'اسم من استلم المبلغ إن لم يكن له حساب.' : 'Name of whoever took the money, if they have no account.'}>
+              <TextInput maxLength={150} value={draft.paidTo} placeholder={ar ? 'مثال: سائق النقل' : 'e.g. the truck driver'} onChange={event => setDraft(current => ({ ...current, paidTo: event.target.value }))} />
+            </FormField>
+          )}
           {draft.payeeType === 'ACCOUNT' && (
             <FormField label={ar ? 'الحساب الدائن' : 'Payable account'} required>
               <Select value={draft.payeeAccountCode} onChange={event => setDraft(current => ({ ...current, payeeAccountCode: event.target.value }))}>

@@ -288,6 +288,7 @@ public sealed class ImportShipmentService(DbConnectionFactory factory, Transacti
         if (request.ExchangeRateToBase <= 0) throw new ImportShipmentException("A positive exchange rate is required.");
         if (!PayeeTypes.Contains(payeeType)) throw new ImportShipmentException("Choose who is paid for this cost.");
         if (request.Description?.Trim().Length > 250) throw new ImportShipmentException("Notes must be 250 characters or fewer.");
+        if (request.PaidTo?.Trim().Length > 150) throw new ImportShipmentException("The name of who was paid must be 150 characters or fewer.");
         var primary = await PrimaryCurrencyAsync(db, tx, ct);
         await EnsureActiveCurrencyAsync(db, tx, request.CurrencyId, ct);
         var rate = request.CurrencyId == primary ? 1m : request.ExchangeRateToBase;
@@ -336,7 +337,7 @@ public sealed class ImportShipmentService(DbConnectionFactory factory, Transacti
         [
             new(GoodsInTransit, null, null, baseAmount, 0, baseAmount, 0, primary, 1),
             credit,
-        ], branch, null, savedBy), ct);
+        ], branch, null, savedBy, PayeeName: payeeType == "TREASURY" && !string.IsNullOrWhiteSpace(request.PaidTo) ? request.PaidTo.Trim() : null), ct);
     }
 
     private async Task<bool> VoidCostAsync(DbConnection db, DbTransaction tx, long id, long costId, string invoice, int branch, bool canUseTreasury, int? savedBy, CancellationToken ct)
@@ -545,13 +546,13 @@ public sealed class ImportShipmentService(DbConnectionFactory factory, Transacti
         }
 
         var costs = new List<ImportCostDetail>();
-        await using (var command = Command(db, tx, "SELECT k.PurchaseCostId,k.CostType,k.Amount,k.CurrencyId,c.CurrencyCode,c.Symbol,k.ExchangeRateToBase,k.BaseAmount,k.PayeeType,k.PayeePartnerId,k.PayeeTreasuryId,k.PayeeAccountCode,COALESCE(partner.PartnerName,COALESCE(t.NameEn,t.NameAr),account.NameEn,k.PayeeAccountCode,N''),k.Description FROM dbo.PurchaseAdditionalCosts k JOIN dbo.Currencies c ON c.CurrencyId=k.CurrencyId LEFT JOIN dbo.Partners partner ON partner.PartnerId=k.PayeePartnerId LEFT JOIN dbo.Treasuries t ON t.TreasuryId=k.PayeeTreasuryId OUTER APPLY (SELECT TOP 1 a.NameEn FROM dbo.Accounts a WHERE a.AccountCode=k.PayeeAccountCode ORDER BY a.BranchId) account WHERE k.PurchaseId=@id AND k.VoidedAt IS NULL ORDER BY k.PurchaseCostId"))
+        await using (var command = Command(db, tx, "SELECT k.PurchaseCostId,k.CostType,k.Amount,k.CurrencyId,c.CurrencyCode,c.Symbol,k.ExchangeRateToBase,k.BaseAmount,k.PayeeType,k.PayeePartnerId,k.PayeeTreasuryId,k.PayeeAccountCode,COALESCE(partner.PartnerName,COALESCE(t.NameEn,t.NameAr),account.NameEn,k.PayeeAccountCode,N''),k.Description,paid.PayeeName FROM dbo.PurchaseAdditionalCosts k JOIN dbo.Purchases p ON p.PurchaseId=k.PurchaseId JOIN dbo.Currencies c ON c.CurrencyId=k.CurrencyId LEFT JOIN dbo.Partners partner ON partner.PartnerId=k.PayeePartnerId LEFT JOIN dbo.Treasuries t ON t.TreasuryId=k.PayeeTreasuryId OUTER APPLY (SELECT TOP 1 a.NameEn FROM dbo.Accounts a WHERE a.AccountCode=k.PayeeAccountCode ORDER BY a.BranchId) account OUTER APPLY (SELECT TOP 1 x.PayeeName FROM dbo.Transactions x WHERE x.RefNo=p.InvoiceNo+N':COST:'+CAST(k.PurchaseCostId AS nvarchar(20)) AND x.PayeeName IS NOT NULL) paid WHERE k.PurchaseId=@id AND k.VoidedAt IS NULL ORDER BY k.PurchaseCostId"))
         {
             Add(command, "@id", id, DbType.Int64);
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
                 costs.Add(new(reader.GetInt64(0), reader.GetString(1), reader.GetDecimal(2), reader.GetInt32(3), reader.GetString(4), reader.GetString(5), reader.GetDecimal(6), reader.GetDecimal(7),
-                    reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetInt32(9), reader.IsDBNull(10) ? null : reader.GetInt32(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13)));
+                    reader.GetString(8), reader.IsDBNull(9) ? null : reader.GetInt32(9), reader.IsDBNull(10) ? null : reader.GetInt32(10), reader.IsDBNull(11) ? null : reader.GetString(11), reader.GetString(12), reader.IsDBNull(13) ? null : reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14)));
         }
 
         var raw = new List<(long Line, long Item, string Name, int? Unit, string? UnitName, decimal Quantity, decimal Price, decimal BaseQuantity, decimal StoredPrice, DateTime? Expiry, string? Batch, string? Barcode)>();
