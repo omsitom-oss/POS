@@ -1,6 +1,7 @@
 // Which permission codes open each section. A section opens when the user holds any one of its codes.
 // The API still enforces every action; this only keeps people away from pages that would answer 403.
-// Sections not listed here (home, items, the design lab) open for every signed-in user.
+// A section that is neither open to everyone nor listed here stays closed, so a new page must be added on purpose.
+const openToEveryone = new Set(['home', 'items'])
 const sectionPermissions: Record<string, readonly string[]> = {
   sales: ['SALES_CREATE', 'SALES_VIEW'],
   'sales-returns': ['SALES_RETURN', 'SALES_VIEW'],
@@ -28,6 +29,7 @@ function sectionKey(section: string) {
 
 export function canOpenSection(section: string, permissions: readonly string[]) {
   const key = sectionKey(section)
+  if (openToEveryone.has(key) || key.startsWith('lab:')) return true
   const required = key === 'settings-detail' ? ['SETTINGS_MANAGE'] : sectionPermissions[key]
-  return !required || required.some(code => permissions.includes(code))
+  return !!required && required.some(code => permissions.includes(code))
 }

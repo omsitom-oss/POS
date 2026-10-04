@@ -6,6 +6,10 @@ describe('canOpenSection', () => {
     for (const section of ['home', 'items', 'lab:overview']) expect(canOpenSection(section, [])).toBe(true)
   })
 
+  it('keeps sections it does not know closed', () => {
+    expect(canOpenSection('something-new', ['USER_MANAGEMENT', 'SETTINGS_MANAGE'])).toBe(false)
+  })
+
   it('needs any one of the section codes', () => {
     expect(canOpenSection('sales', ['SALES_CREATE'])).toBe(true)
     expect(canOpenSection('sales', ['SALES_VIEW'])).toBe(true)
