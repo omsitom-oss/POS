@@ -59,16 +59,19 @@ public sealed class ReceiptService(DbConnectionFactory factory, TransactionServi
         var (primaryCurrencyId, treasuryRate) = primary.Value;
         var treasuryBase = Round(request.Amount * treasuryRate);
         decimal open = 0, openBase = 0;
+        var unconverted = false;
         await using (var balance = db.CreateCommand())
         {
             balance.Transaction = tx;
-            balance.CommandText = "SELECT COALESCE(SUM(ForeignDebit-ForeignCredit),0),COALESCE(SUM(Debit-Credit),0) FROM dbo.Transactions WHERE PartnerId=@partner AND CurrencyId=@currency";
-            Add(balance, "@partner", request.PartnerId, DbType.Int32); Add(balance, "@currency", partnerCurrencyId, DbType.Int32);
+            // A foreign row whose Debit/Credit still equal its foreign amount was posted before journals were kept in the
+            // primary currency and missed the backfill (no stored rate), so the booked rate cannot be trusted.
+            balance.CommandText = "SELECT COALESCE(SUM(ForeignDebit-ForeignCredit),0),COALESCE(SUM(Debit-Credit),0),COUNT(CASE WHEN @currency<>@primary AND Debit+Credit>0 AND Debit+Credit=ForeignDebit+ForeignCredit THEN 1 END) FROM dbo.Transactions WHERE PartnerId=@partner AND CurrencyId=@currency";
+            Add(balance, "@partner", request.PartnerId, DbType.Int32); Add(balance, "@currency", partnerCurrencyId, DbType.Int32); Add(balance, "@primary", primaryCurrencyId, DbType.Int32);
             await using var reader = await balance.ExecuteReaderAsync(ct);
-            if (await reader.ReadAsync(ct)) { open = reader.GetDecimal(0); openBase = reader.GetDecimal(1); }
+            if (await reader.ReadAsync(ct)) { open = reader.GetDecimal(0); openBase = reader.GetDecimal(1); unconverted = reader.GetInt32(2) > 0; }
         }
         // A payment settles what we owe (a credit balance); a receipt settles what the partner owes us (a debit balance).
-        var settles = receipt ? open > 0 : open < 0;
+        var settles = !unconverted && (receipt ? open > 0 : open < 0);
         var bookedRate = open != 0 ? openBase / open : 0;
         var settled = settles && bookedRate > 0 ? Math.Min(partnerAmount, Math.Abs(open)) : 0;
         var partnerBase = Round(settled * bookedRate + (partnerAmount - settled) * (treasuryBase / partnerAmount));
