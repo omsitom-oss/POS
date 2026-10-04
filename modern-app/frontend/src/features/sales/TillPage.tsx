@@ -127,6 +127,7 @@ export function TillPage({ locale, branchId, userId, branchName, canOverridePric
   async function pay() {
     if (paying) return
     if (!lines.length) { say('bad', ar ? 'أضف صنفاً أولاً.' : 'Add an item first.'); scanRef.current?.focus(); return }
+    if (lines.some(line => line.quantity <= 0)) { say('bad', ar ? 'أدخل كمية أكبر من صفر لكل سطر.' : 'Every line needs a quantity above zero.'); return }
     if (!onAccount && !drawerId) { say('bad', ar ? 'اختر الخزنة أعلى الشاشة.' : 'Choose the drawer at the top first.'); return }
     if (short) { say('bad', ar ? 'المبلغ المدفوع أقل من الإجمالي.' : 'The tendered amount is less than the total.'); tenderRef.current?.focus(); return }
     setPaying(true)
@@ -135,7 +136,7 @@ export function TillPage({ locale, branchId, userId, branchName, canOverridePric
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ saleDate: localDate(), customerPartnerId: onAccount ? Number(customerId) : null, treasuryId: onAccount ? null : Number(drawerId), currencyId: currency?.currencyId, branchId, savedBy: userId, discount: discountValue, lines: lines.map(line => ({ itemId: line.item.itemId, quantity: line.quantity, unitPrice: line.unitPrice })) }),
       })
-      if (!response.ok) throw new Error(await response.text())
+      if (!response.ok) { const problem = await response.json().catch(() => null) as { detail?: string } | null; throw new Error(problem?.detail ?? '') }
       const result = await response.json() as { saleNo: string }
       const changeText = !onAccount && change > 0 ? ` · ${ar ? 'الباقي' : 'Change'} ${formatMoney(change, symbol)}` : ''
       clearSale()
@@ -204,7 +205,7 @@ export function TillPage({ locale, branchId, userId, branchName, canOverridePric
                 </small></div>
               <div className="till-step" role="group" aria-label={ar ? 'الكمية' : 'Quantity'}>
                 <button type="button" aria-label={ar ? 'إنقاص' : 'Decrease'} onClick={() => setQuantity(line.key, line.quantity - 1)}>−</button>
-                <input type="number" min="0" step="any" inputMode="decimal" value={line.quantity} aria-label={`${ar ? 'كمية' : 'Quantity of'} ${ar ? line.item.nameAr : line.item.nameEn}`} onChange={event => setQuantity(line.key, Number(event.target.value) || 0)} onFocus={event => event.target.select()} />
+                <input type="number" min="0" step="any" inputMode="decimal" value={line.quantity} aria-label={`${ar ? 'كمية' : 'Quantity of'} ${ar ? line.item.nameAr : line.item.nameEn}`} onChange={event => setLines(current => current.map(entry => entry.key === line.key ? { ...entry, quantity: Math.max(0, Number(event.target.value) || 0) } : entry))} onFocus={event => event.target.select()} />
                 <button type="button" aria-label={ar ? 'زيادة' : 'Increase'} onClick={() => setQuantity(line.key, line.quantity + 1)}>+</button>
               </div>
               <label className="till-price"><span>{ar ? 'السعر' : 'Price'}</span>

@@ -57,6 +57,18 @@ describe('TillPage', () => {
     expect(sentSale(fetchMock)).toMatchObject({ treasuryId: 3, customerPartnerId: null, currencyId: 1, lines: [{ itemId: 2, quantity: 1, unitPrice: 8 }] })
   })
 
+  it('keeps a line while its quantity is cleared and refuses to pay it at zero', async () => {
+    const fetchMock = mockFetch(references)
+    localStorage.setItem('elite-pos-till-drawer-7', '3')
+    const { scan } = await open()
+    await userEvent.type(scan, 'BRU-400{Enter}')
+    await userEvent.clear(screen.getByLabelText('Quantity of Brufen'))
+    expect(screen.getByLabelText('Quantity of Brufen')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^Pay/ }))
+    expect(await screen.findByText('Every line needs a quantity above zero.')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+
   it('blocks a short tender', async () => {
     mockFetch(references)
     localStorage.setItem('elite-pos-till-drawer-7', '3')
