@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using ElitePos.LocalService.Security;
 
 namespace ElitePos.LocalService.Tests;
 
@@ -130,6 +131,40 @@ public sealed class SqlServerFinanceTests(SqlServerApiFixture fixture) : IClassF
         var receiptNo = (await response.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("receiptNo").GetString();
         var accounts = await fixture.Database.ScalarAsync<string>($"SELECT STRING_AGG(AccountId, N',') WITHIN GROUP (ORDER BY AccountId) FROM dbo.Transactions WHERE RefNo=N'{receiptNo}'", Ct);
         Assert.Equal($"PARTNER:{refs.Supplier},TREASURY:{refs.Treasury}", accounts);
+    }
+
+    [Fact]
+    public async Task A_cashier_sells_at_list_price_and_within_the_role_discount_limit()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var item = await NewItemAsync("FN-PRICE");
+        await BuyAsync(refs, item, 20m, 4m);
+        var (cashier, _, _) = await fixture.CreateUserAsync("fn-cashier", fixture.BranchA, PermissionCodes.SalesCreate);
+        Task<HttpResponseMessage> Sell(HttpClient client, decimal price, decimal discount) =>
+            client.PostAsJsonAsync("/api/sales", new { treasuryId = refs.Treasury, currencyId = refs.Currency, discount, lines = new[] { new { itemId = item, quantity = 1m, unitPrice = price } } }, Ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await Sell(cashier, 8m, 0m)).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await Sell(cashier, 10m, 0m)).StatusCode);
+        var noDiscount = await Sell(cashier, 10m, 1m);
+        Assert.Equal(HttpStatusCode.Forbidden, noDiscount.StatusCode);
+        Assert.Contains("not allowed to give a discount", await noDiscount.Content.ReadAsStringAsync(Ct));
+
+        // Allow 10% on the cashier's role through the roles screen's API.
+        var role = (await Admin.GetFromJsonAsync<JsonElement[]>("/api/roles", Ct))!.Single(r => r.GetProperty("name").GetString() == "role-fn-cashier");
+        Assert.Equal(0m, role.GetProperty("maxDiscountPercent").GetDecimal());
+        var permissionIds = role.GetProperty("permissions").EnumerateArray().Select(p => p.GetProperty("permissionId").GetInt32()).ToArray();
+        var saved = await Admin.PutAsJsonAsync($"/api/roles/{role.GetProperty("roleId").GetInt32()}", new { name = "role-fn-cashier", isActive = true, permissionIds, maxDiscountPercent = 10m }, Ct);
+        Assert.Equal(10m, (await saved.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("maxDiscountPercent").GetDecimal());
+
+        Assert.Equal(HttpStatusCode.Created, (await Sell(cashier, 10m, 1m)).StatusCode);
+        var tooMuch = await Sell(cashier, 10m, 1.5m);
+        Assert.Equal(HttpStatusCode.Forbidden, tooMuch.StatusCode);
+        Assert.Contains("limit of 10%", await tooMuch.Content.ReadAsStringAsync(Ct));
+
+        var (supervisor, _, _) = await fixture.CreateUserAsync("fn-supervisor", fixture.BranchA, PermissionCodes.SalesCreate, PermissionCodes.SalesPriceOverride);
+        Assert.Equal(HttpStatusCode.Created, (await Sell(supervisor, 8m, 0m)).StatusCode);
+        Assert.Equal(17, await StockAsync(item));
     }
 
     private sealed record Refs(int Currency, int Treasury, int Supplier);
