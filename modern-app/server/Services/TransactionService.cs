@@ -74,7 +74,7 @@ public sealed class TransactionService(DbConnectionFactory factory)
     {
         Validate(request);
         var lines = request.Lines!;
-        var transactionDate = (request.TransactionDate ?? DateTime.UtcNow).Date;
+        var transactionDate = (request.TransactionDate ?? DateTime.Today).Date;
         var branchId = request.BranchId ?? await ReadDefaultBranchAsync(db, tx, ct);
         await ValidateReferencesAsync(db, tx, request, branchId, lines, ct);
         var moveNo = await NextMoveNoAsync(db, tx, ct);

@@ -14,7 +14,7 @@ public sealed class TreasuryTransferService(DbConnectionFactory factory, Transac
         if (request.SourceAmount <= 0 || request.DestinationAmount <= 0 || request.ExchangeRate <= 0)
             throw new TreasuryTransferException("Amounts and exchange rate must be greater than zero.");
 
-        var date = (request.TransferDate ?? DateTime.UtcNow).Date;
+        var date = (request.TransferDate ?? DateTime.Today).Date;
         await using var db = factory.CreateConnection(); await db.OpenAsync(ct);
         // Both ends must belong to the transfer's branch; the ledger carries one branch per move, so cross-branch transfers are not supported.
         var branchId = request.BranchId ?? throw new TreasuryTransferException("Branch is required.");

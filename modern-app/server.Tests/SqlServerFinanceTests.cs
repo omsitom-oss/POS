@@ -120,6 +120,18 @@ public sealed class SqlServerFinanceTests(SqlServerApiFixture fixture) : IClassF
         Assert.Equal(HttpStatusCode.OK, renamed.StatusCode);
     }
 
+    [Fact]
+    public async Task A_receipt_posts_to_the_partner_and_treasury_whatever_account_codes_the_client_sends()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var response = await Admin.PostAsJsonAsync("/api/receipts", new { type = "RECEIPT", partnerId = refs.Supplier, treasuryId = refs.Treasury, amount = 25m, exchangeRate = 1m, partnerAccountId = "4100", treasuryAccountId = "1300" }, Ct);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var receiptNo = (await response.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("receiptNo").GetString();
+        var accounts = await fixture.Database.ScalarAsync<string>($"SELECT STRING_AGG(AccountId, N',') WITHIN GROUP (ORDER BY AccountId) FROM dbo.Transactions WHERE RefNo=N'{receiptNo}'", Ct);
+        Assert.Equal($"PARTNER:{refs.Supplier},TREASURY:{refs.Treasury}", accounts);
+    }
+
     private sealed record Refs(int Currency, int Treasury, int Supplier);
 
     private async Task<Refs> SeedAsync()

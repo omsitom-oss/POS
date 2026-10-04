@@ -11,7 +11,7 @@ public sealed class ExpenseService(DbConnectionFactory factory, TransactionServi
     {
         Validate(request);
         await using var db = await OpenAsync(ct);
-        var date = (request.ExpenseDate ?? DateTime.UtcNow).Date;
+        var date = (request.ExpenseDate ?? DateTime.Today).Date;
         var refs = await ReadReferencesAsync(db, request, ct);
         var number = await NextNumberAsync(db, date, ct);
         var expenseNo = $"EXP-{date:ddMMyy}-{number:D4}";
