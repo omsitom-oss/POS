@@ -69,6 +69,10 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
         var withTill = await Admin.PostAsJsonAsync("/api/sales", new { customerPartnerId = customer, treasuryId = refs.Treasury, currencyId = refs.Currency, lines = new[] { new { itemId = x, quantity = 1m, unitPrice = 8m } } }, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, withTill.StatusCode);
         Assert.Contains("customer's account", await withTill.Content.ReadAsStringAsync(Ct));
+        // A supplier-only partner is not a customer, so nothing can be sold to it on account.
+        var toSupplier = await Admin.PostAsJsonAsync("/api/sales", new { customerPartnerId = await SupplierOnlyAsync(), currencyId = refs.Currency, lines = new[] { new { itemId = x, quantity = 1m, unitPrice = 8m } } }, Ct);
+        Assert.Equal(HttpStatusCode.BadRequest, toSupplier.StatusCode);
+        Assert.Contains("supplier", await toSupplier.Content.ReadAsStringAsync(Ct));
         var walkInWithoutTill = await Admin.PostAsJsonAsync("/api/sales", new { currencyId = refs.Currency, lines = new[] { new { itemId = x, quantity = 1m, unitPrice = 8m } } }, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, walkInWithoutTill.StatusCode);
 
@@ -319,6 +323,15 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
                 INSERT dbo.Partners(PartnerCode,PartnerName,Status,PartnerTypeSettingId) SELECT N'P-ACC',N'Account customer',N'ACTIVE',PartnerTypeSettingId FROM dbo.Partners WHERE PartnerCode=N'P-SEC';
             """, "customer", Ct);
         return await fixture.Database.CountAsync("SELECT PartnerId FROM dbo.Partners WHERE PartnerCode=N'P-ACC'", Ct);
+    }
+
+    private async Task<int> SupplierOnlyAsync()
+    {
+        await fixture.Database.ExecuteAsync("""
+            IF NOT EXISTS (SELECT 1 FROM dbo.Partners WHERE PartnerCode=N'P-SUP')
+                INSERT dbo.Partners(PartnerCode,PartnerName,Status,PartnerTypeSettingId) SELECT TOP 1 N'P-SUP',N'Supplier only',N'ACTIVE',s.SettingId FROM dbo.Settings s JOIN dbo.SettingTypes t ON t.SettingTypeId=s.SettingTypeId WHERE t.Code=N'PARTNER_TYPE' AND (s.Code=N'SUPPLIER' OR s.ValueEn=N'Supplier') ORDER BY s.SettingId;
+            """, "supplier", Ct);
+        return await fixture.Database.CountAsync("SELECT PartnerId FROM dbo.Partners WHERE PartnerCode=N'P-SUP'", Ct);
     }
 
     // Debit minus credit on the customer: what they still owe us.
