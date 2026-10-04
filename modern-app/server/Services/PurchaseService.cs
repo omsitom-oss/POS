@@ -51,13 +51,15 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
             if (purchaseType == "IMPORT" && goodsBase <= 0) throw new PurchaseException("Imported goods must have a positive total.");
             foreach(var row in draftRows){ var goodsLineBase=row.qty*row.sourcePrice*exchangeRate; var allocated=row.qty<=0||goodsBase<=0?0:additionalBase*(goodsLineBase/goodsBase); var finalUnitCost=(goodsLineBase+allocated)/row.qty; await using(var update=db.CreateCommand()){update.Transaction=tx;update.CommandText="UPDATE dbo.PurchaseLines SET UnitPrice=@price WHERE PurchaseLineId=@line";Add(update,"@price",finalUnitCost,DbType.Decimal);Add(update,"@line",row.line,DbType.Int64);await update.ExecuteNonQueryAsync(ct);} await using var stock=db.CreateCommand();stock.Transaction=tx;stock.CommandText="INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@purchase,@quantity,@price,N'POSTED')";Add(stock,"@branch",branch,DbType.Int32);Add(stock,"@item",row.item,DbType.Int64);Add(stock,"@purchase",id,DbType.Int64);Add(stock,"@quantity",row.qty,DbType.Decimal);Add(stock,"@price",finalUnitCost,DbType.Decimal);await stock.ExecuteNonQueryAsync(ct); }
             await using(var received=db.CreateCommand()){received.Transaction=tx;received.CommandText="UPDATE dbo.Purchases SET Status=N'POSTED',PostedAt=SYSUTCDATETIME(),ReceivedAt=SYSUTCDATETIME(),LandedCostBase=@landed WHERE PurchaseId=@id AND Status=N'DRAFT'";Add(received,"@landed",landedBase,DbType.Decimal);Add(received,"@id",id,DbType.Int64);await received.ExecuteNonQueryAsync(ct);}
-            await tx.CommitAsync(ct);
             if (purchaseType != "IMPORT")
             {
-                await transactions.SaveAsync(new TransactionWriteRequest("PURCHASE", "PURCHASE", invoice, description, currency, 1, [new("1300", null, null, total, 0, total, 0, currency, 1), new("2100", supplier, null, 0, total, 0, total, currency, 1)], branch, null, savedBy), ct);
+                await transactions.PostAsync(db, tx, new TransactionWriteRequest("PURCHASE", "PURCHASE", invoice, description, currency, 1, [new("1300", null, null, total, 0, total, 0, currency, 1), new("2100", supplier, null, 0, total, 0, total, currency, 1)], branch, null, savedBy), ct);
             }
-            return await GetByIdAsync(id,ct);
-        } catch { await tx.RollbackAsync(ct); throw; }
+            await tx.CommitAsync(ct);
+        }
+        catch (TransactionException ex) { await tx.RollbackAsync(ct); throw new PurchaseException(ex.Message, ex.StatusCode); }
+        catch { await tx.RollbackAsync(ct); throw; }
+        return await GetByIdAsync(id,ct);
     }
     public async Task<bool> UpdateLineMetadataAsync(long purchaseId, long lineId, PurchaseLineMetadataUpdateRequest request, CancellationToken ct)
     {
@@ -88,16 +90,20 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
     public async Task<PurchaseAdditionalCost> AddCostAsync(long purchaseId, PurchaseAdditionalCostWriteRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.CostType) || request.Amount < 0 || request.ExchangeRateToBase <= 0 || request.CurrencyId <= 0) throw new PurchaseException("Cost type, currency, amount and exchange rate are required.");
-        await using var db=await OpenAsync(ct); await using var tx=await db.BeginTransactionAsync(IsolationLevel.Serializable,ct);
+        await using var db=await OpenAsync(ct); await using var tx=await db.BeginTransactionAsync(IsolationLevel.Serializable,ct); long id;
         try { await using var check=db.CreateCommand(); check.Transaction=tx; check.CommandText="SELECT PurchaseType,Status,InvoiceNo,BranchId,SupplierPartnerId,Description FROM dbo.Purchases WHERE PurchaseId=@id"; Add(check,"@id",purchaseId,DbType.Int64); await using var reader=await check.ExecuteReaderAsync(ct); if(!await reader.ReadAsync(ct)) throw new PurchaseException("Import invoice was not found.",404); var type=reader.GetString(0); var status=reader.GetString(1); var invoice=reader.GetString(2); var branch=reader.GetInt32(3); var supplier=reader.GetInt32(4); var description=reader.IsDBNull(5)?null:reader.GetString(5); if(type!="IMPORT" && description?.StartsWith("IMPORT:", StringComparison.OrdinalIgnoreCase)==true) type="IMPORT"; await reader.CloseAsync(); if(type!="IMPORT"||status!="DRAFT") throw new PurchaseException("Costs can only be added to an import draft.");
-            var baseAmount=decimal.Round(request.Amount*request.ExchangeRateToBase,4); await using var insert=db.CreateCommand(); insert.Transaction=tx; insert.CommandText="INSERT INTO dbo.PurchaseAdditionalCosts(PurchaseId,CostType,Amount,CurrencyId,ExchangeRateToBase,BaseAmount,Description) OUTPUT INSERTED.PurchaseCostId VALUES(@purchase,@type,@amount,@currency,@rate,@base,@description)"; Add(insert,"@purchase",purchaseId,DbType.Int64);Add(insert,"@type",request.CostType.Trim(),DbType.String);Add(insert,"@amount",request.Amount,DbType.Decimal);Add(insert,"@currency",request.CurrencyId,DbType.Int32);Add(insert,"@rate",request.ExchangeRateToBase,DbType.Decimal);Add(insert,"@base",baseAmount,DbType.Decimal);Add(insert,"@description",request.Description,DbType.String); var id=Convert.ToInt64(await insert.ExecuteScalarAsync(ct)); await tx.CommitAsync(ct);
-            if (baseAmount > 0) { var primary=await GetPrimaryCurrencyIdAsync(ct); await transactions.SaveAsync(new TransactionWriteRequest("PURCHASE_COST","IMPORT_COST",invoice+":COST:"+id,request.Description,primary,1,[new("1300",null,null,baseAmount,0,baseAmount,0,primary,1),new("2100",supplier,null,0,baseAmount,0,baseAmount,primary,1)],branch,null,null),ct); } return (await GetCostsAsync(purchaseId,ct)).First(x=>x.PurchaseCostId==id);
-        } catch { await tx.RollbackAsync(ct); throw; }
+            var baseAmount=decimal.Round(request.Amount*request.ExchangeRateToBase,4); await using var insert=db.CreateCommand(); insert.Transaction=tx; insert.CommandText="INSERT INTO dbo.PurchaseAdditionalCosts(PurchaseId,CostType,Amount,CurrencyId,ExchangeRateToBase,BaseAmount,Description) OUTPUT INSERTED.PurchaseCostId VALUES(@purchase,@type,@amount,@currency,@rate,@base,@description)"; Add(insert,"@purchase",purchaseId,DbType.Int64);Add(insert,"@type",request.CostType.Trim(),DbType.String);Add(insert,"@amount",request.Amount,DbType.Decimal);Add(insert,"@currency",request.CurrencyId,DbType.Int32);Add(insert,"@rate",request.ExchangeRateToBase,DbType.Decimal);Add(insert,"@base",baseAmount,DbType.Decimal);Add(insert,"@description",request.Description,DbType.String); id=Convert.ToInt64(await insert.ExecuteScalarAsync(ct));
+            if (baseAmount > 0) { var primary=await GetPrimaryCurrencyIdAsync(db,tx,ct); await transactions.PostAsync(db,tx,new TransactionWriteRequest("PURCHASE_COST","IMPORT_COST",invoice+":COST:"+id,request.Description,primary,1,[new("1300",null,null,baseAmount,0,baseAmount,0,primary,1),new("2100",supplier,null,0,baseAmount,0,baseAmount,primary,1)],branch,null,null),ct); }
+            await tx.CommitAsync(ct);
+        }
+        catch (TransactionException ex) { await tx.RollbackAsync(ct); throw new PurchaseException(ex.Message, ex.StatusCode); }
+        catch { await tx.RollbackAsync(ct); throw; }
+        return (await GetCostsAsync(purchaseId,ct)).First(x=>x.PurchaseCostId==id);
     }
     public async Task<PurchaseListItem> SaveAsync(PurchaseWriteRequest request, CancellationToken ct)
     {
         if (request.SupplierPartnerId <= 0 || request.Lines is null || request.Lines.Count == 0) throw new PurchaseException("Supplier, currency and at least one item are required.");
-        var status = string.Equals(request.Status, "POSTED", StringComparison.OrdinalIgnoreCase) ? "POSTED" : "DRAFT"; var branch = request.BranchId;
+        var status = string.Equals(request.Status, "POSTED", StringComparison.OrdinalIgnoreCase) ? "POSTED" : "DRAFT"; var branch = request.BranchId; long id;
         await using var db = await OpenAsync(ct); await using var tx = await db.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         try
         {
@@ -130,13 +136,13 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
             await using var sequence = db.CreateCommand(); sequence.Transaction = tx;
             sequence.CommandText = factory.ProviderName.Equals("SQLite", StringComparison.OrdinalIgnoreCase)
                 ? "SELECT COALESCE(MAX(CAST(substr(InvoiceNo, length(@prefix) + 1) AS INTEGER)), 0) + 1 FROM Purchases WHERE BranchId=@branch AND InvoiceNo LIKE @prefix"
-                : "SELECT ISNULL(MAX(TRY_CONVERT(int, RIGHT(InvoiceNo, 5))), 0) + 1 FROM dbo.Purchases WITH (UPDLOCK, HOLDLOCK) WHERE BranchId=@branch AND InvoiceNo LIKE @prefix";
+                : "SELECT ISNULL(MAX(TRY_CONVERT(int, SUBSTRING(InvoiceNo, LEN(@prefix), 20))), 0) + 1 FROM dbo.Purchases WITH (UPDLOCK, HOLDLOCK) WHERE BranchId=@branch AND InvoiceNo LIKE @prefix";
             Add(sequence, "@branch", branch, DbType.Int32); Add(sequence, "@prefix", $"PO-{branch}-%", DbType.String);
             var nextInvoiceNumber = Convert.ToInt32(await sequence.ExecuteScalarAsync(ct));
             var invoice = $"PO-{branch}-{nextInvoiceNumber:D5}";
             var subtotal=request.Lines.Sum(x=>x.Quantity*x.UnitPrice); if(request.Discount<0 || request.Discount>subtotal) throw new PurchaseException("Discount must be between zero and the items total."); var total=subtotal-request.Discount;
             var purchaseType=string.Equals(request.PurchaseType,"IMPORT",StringComparison.OrdinalIgnoreCase)?"IMPORT":"LOCAL"; if(request.ExchangeRateToBase<=0) throw new PurchaseException("A positive exchange rate is required."); if(purchaseType=="IMPORT" && subtotal*request.ExchangeRateToBase<=0) throw new PurchaseException("Imported goods must have a positive total.");
-            await using var insert=db.CreateCommand(); insert.Transaction=tx; insert.CommandText="INSERT INTO dbo.Purchases(BranchId,SupplierPartnerId,InvoiceNo,PurchaseDate,Status,PostedAt,CurrencyId,Total,Discount,Description,SavedBy,PurchaseType,ExchangeRateToBase,CountryId) OUTPUT INSERTED.PurchaseId VALUES(@branch,@supplier,@invoice,@date,@status,@posted,@currency,@total,@discount,@description,@saved,@type,@rate,@country)"; Add(insert,"@branch",branch,DbType.Int32); Add(insert,"@supplier",request.SupplierPartnerId,DbType.Int32); Add(insert,"@invoice",invoice,DbType.String); Add(insert,"@date",(request.PurchaseDate??DateTime.UtcNow).Date,DbType.Date); Add(insert,"@status",status,DbType.String); Add(insert,"@posted",status=="POSTED" ? DateTime.UtcNow : null,DbType.DateTime2); Add(insert,"@currency",currencyId,DbType.Int32); Add(insert,"@total",total,DbType.Decimal); Add(insert,"@discount",request.Discount,DbType.Decimal); Add(insert,"@description",request.Description,DbType.String); Add(insert,"@saved",request.SavedBy,DbType.Int32); Add(insert,"@type",purchaseType,DbType.String); Add(insert,"@rate",request.ExchangeRateToBase,DbType.Decimal); Add(insert,"@country",request.CountryId,DbType.Int32); var id=Convert.ToInt64(await insert.ExecuteScalarAsync(ct));
+            await using var insert=db.CreateCommand(); insert.Transaction=tx; insert.CommandText="INSERT INTO dbo.Purchases(BranchId,SupplierPartnerId,InvoiceNo,PurchaseDate,Status,PostedAt,CurrencyId,Total,Discount,Description,SavedBy,PurchaseType,ExchangeRateToBase,CountryId) OUTPUT INSERTED.PurchaseId VALUES(@branch,@supplier,@invoice,@date,@status,@posted,@currency,@total,@discount,@description,@saved,@type,@rate,@country)"; Add(insert,"@branch",branch,DbType.Int32); Add(insert,"@supplier",request.SupplierPartnerId,DbType.Int32); Add(insert,"@invoice",invoice,DbType.String); Add(insert,"@date",(request.PurchaseDate??DateTime.UtcNow).Date,DbType.Date); Add(insert,"@status",status,DbType.String); Add(insert,"@posted",status=="POSTED" ? DateTime.UtcNow : null,DbType.DateTime2); Add(insert,"@currency",currencyId,DbType.Int32); Add(insert,"@total",total,DbType.Decimal); Add(insert,"@discount",request.Discount,DbType.Decimal); Add(insert,"@description",request.Description,DbType.String); Add(insert,"@saved",request.SavedBy,DbType.Int32); Add(insert,"@type",purchaseType,DbType.String); Add(insert,"@rate",request.ExchangeRateToBase,DbType.Decimal); Add(insert,"@country",request.CountryId,DbType.Int32); id=Convert.ToInt64(await insert.ExecuteScalarAsync(ct));
             foreach (var line in request.Lines)
             {
                 await using var unit = db.CreateCommand(); unit.Transaction = tx; unit.CommandText = "SELECT TOP 1 UnitSettingId FROM dbo.ItemUnits WHERE ItemId=@item AND IsBase=1"; Add(unit, "@item", line.ItemId, DbType.Int64); var baseUnitValue = await unit.ExecuteScalarAsync(ct); if (baseUnitValue is null) throw new PurchaseException("A base unit is required for every item."); var baseUnitId = Convert.ToInt32(baseUnitValue); var conversion = 1m; if (line.UnitSettingId.HasValue) { await using var selected = db.CreateCommand(); selected.Transaction = tx; selected.CommandText = "SELECT ConversionToBase FROM dbo.ItemUnits WHERE ItemId=@item AND UnitSettingId=@unit"; Add(selected,"@item",line.ItemId,DbType.Int64); Add(selected,"@unit",line.UnitSettingId,DbType.Int32); var selectedValue = await selected.ExecuteScalarAsync(ct); if(selectedValue is null) throw new PurchaseException("The selected unit is not valid for this item."); conversion = Convert.ToDecimal(selectedValue); }
@@ -147,21 +153,24 @@ public sealed class PurchaseService(DbConnectionFactory factory, TransactionServ
                 await using var l=db.CreateCommand(); l.Transaction=tx; l.CommandText="INSERT INTO dbo.PurchaseLines(PurchaseId,ItemId,UnitSettingId,Quantity,UnitPrice,OriginalUnitSettingId,OriginalQuantity,OriginalUnitPrice,ExpiryDate,Barcode,BatchNo) VALUES(@purchase,@item,@unit,@quantity,@price,@originalUnit,@originalQuantity,@originalPrice,@expiry,@barcode,@batch)"; Add(l,"@purchase",id,DbType.Int64); Add(l,"@item",line.ItemId,DbType.Int64); Add(l,"@unit",baseUnitId,DbType.Int32); Add(l,"@quantity",baseQuantity,DbType.Decimal); Add(l,"@price",basePrice,DbType.Decimal); Add(l,"@originalUnit",line.UnitSettingId,DbType.Int32); Add(l,"@originalQuantity",line.Quantity,DbType.Decimal); Add(l,"@originalPrice",line.UnitPrice,DbType.Decimal); Add(l,"@expiry",line.ExpiryDate?.Date,DbType.Date); Add(l,"@barcode",line.Barcode,DbType.String); Add(l,"@batch",batchNo,DbType.String); await l.ExecuteNonQueryAsync(ct);
                 if(status=="POSTED"){ await using var stock=db.CreateCommand(); stock.Transaction=tx; stock.CommandText="INSERT INTO dbo.StockMovements(BranchId,ItemId,PurchaseId,Quantity,UnitCost,PostingStatus) VALUES(@branch,@item,@purchase,@quantity,@price,N'POSTED')"; Add(stock,"@branch",branch,DbType.Int32); Add(stock,"@item",line.ItemId,DbType.Int64); Add(stock,"@purchase",id,DbType.Int64); Add(stock,"@quantity",baseQuantity,DbType.Decimal); Add(stock,"@price",basePrice,DbType.Decimal); await stock.ExecuteNonQueryAsync(ct); }
             }
-            await tx.CommitAsync(ct);
             if ((status == "POSTED" || purchaseType == "IMPORT") && (purchaseType != "IMPORT" || subtotal * request.ExchangeRateToBase > 0))
             {
-                var transactionCurrency = purchaseType == "IMPORT" ? await GetPrimaryCurrencyIdAsync(ct) : currencyId;
+                var transactionCurrency = purchaseType == "IMPORT" ? await GetPrimaryCurrencyIdAsync(db, tx, ct) : currencyId;
                 var transactionAmount = purchaseType == "IMPORT" ? subtotal * request.ExchangeRateToBase : total;
-                await transactions.SaveAsync(new TransactionWriteRequest("PURCHASE", purchaseType == "IMPORT" ? "IMPORT_OPEN" : "PURCHASE", invoice, request.Description, transactionCurrency, 1, new[]
+                await transactions.PostAsync(db, tx, new TransactionWriteRequest("PURCHASE", purchaseType == "IMPORT" ? "IMPORT_OPEN" : "PURCHASE", invoice, request.Description, transactionCurrency, 1, new[]
                 {
                     new TransactionLineRequest("1300", null, null, transactionAmount, 0, transactionAmount, 0, transactionCurrency, 1),
                     new TransactionLineRequest("2100", request.SupplierPartnerId, null, 0, transactionAmount, 0, transactionAmount, transactionCurrency, 1)
                 }, branch, request.PurchaseDate, request.SavedBy), ct);
             }
-            return (await GetAsync(branch, ct)).First(x=>x.PurchaseId==id);
-        } catch { await tx.RollbackAsync(ct); throw; }
+            // The stock and the journal commit together, so a failed journal leaves no received goods behind.
+            await tx.CommitAsync(ct);
+        }
+        catch (TransactionException ex) { await tx.RollbackAsync(ct); throw new PurchaseException(ex.Message, ex.StatusCode); }
+        catch { await tx.RollbackAsync(ct); throw; }
+        return (await GetAsync(branch, ct)).First(x=>x.PurchaseId==id);
     }
-    private async Task<int> GetPrimaryCurrencyIdAsync(CancellationToken ct){await using var db=await OpenAsync(ct);await using var cmd=db.CreateCommand();cmd.CommandText="SELECT TOP 1 CurrencyId FROM dbo.Currencies WHERE IsPrimary=1 AND IsActive=1";var value=await cmd.ExecuteScalarAsync(ct);return value is null||value==DBNull.Value?1:Convert.ToInt32(value);}
+    private static async Task<int> GetPrimaryCurrencyIdAsync(DbConnection db,DbTransaction tx,CancellationToken ct){await using var cmd=db.CreateCommand();cmd.Transaction=tx;cmd.CommandText="SELECT TOP 1 CurrencyId FROM dbo.Currencies WHERE IsPrimary=1 AND IsActive=1";var value=await cmd.ExecuteScalarAsync(ct);return value is null||value==DBNull.Value?1:Convert.ToInt32(value);}
     private async Task<DbConnection> OpenAsync(CancellationToken ct){var db=factory.CreateConnection();await db.OpenAsync(ct);return db;} private static void Add(DbCommand c,string n,object? v,DbType t){var p=c.CreateParameter();p.ParameterName=n;p.DbType=t;p.Value=v??DBNull.Value;c.Parameters.Add(p);}
 }
 public sealed class PurchaseException(string message,int statusCode=400):Exception(message){public int StatusCode{get;}=statusCode;}
