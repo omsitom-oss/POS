@@ -373,6 +373,32 @@ public sealed class SqlServerFinanceTests(SqlServerApiFixture fixture) : IClassF
         Assert.Equal(200m, await Fx(await Pay(100m, 52m)));
     }
 
+    [Fact]
+    public async Task The_chart_shows_what_a_supplier_is_owed_once_under_trade_creditors()
+    {
+        SkipWithoutSqlServer();
+        var refs = await SeedAsync();
+        var item = await NewItemAsync("FN-CHART");
+        async Task<Dictionary<string, decimal>> ChartAsync()
+        {
+            var rows = await Admin.GetFromJsonAsync<JsonElement>($"/api/accounts/chart?branchId={fixture.BranchA}", Ct);
+            return rows.EnumerateArray().ToDictionary(row => row.GetProperty("accountCode").GetString()!, row => row.GetProperty("balance").GetDecimal());
+        }
+        // Money the supplier hands in puts cash in the till for the payment below and keeps the supplier on the creditor side.
+        Assert.Equal(HttpStatusCode.Created, (await Admin.PostAsJsonAsync("/api/receipts", new { type = "RECEIPT", partnerId = refs.Supplier, treasuryId = refs.Treasury, amount = 100m, exchangeRate = 1m, branchId = fixture.BranchA }, Ct)).StatusCode);
+        var before = await ChartAsync();
+
+        // Owe the supplier 40, then pay 15 of it from the till: the supplier stays a creditor for 25.
+        await BuyAsync(refs, item, 10m, 4m);
+        Assert.Equal(HttpStatusCode.Created, (await Admin.PostAsJsonAsync("/api/receipts", new { type = "PAYMENT", partnerId = refs.Supplier, treasuryId = refs.Treasury, amount = 15m, exchangeRate = 1m, branchId = fixture.BranchA }, Ct)).StatusCode);
+        var after = await ChartAsync();
+
+        Assert.Equal(-25m, after["2100"] - before["2100"]);
+        Assert.Equal(0m, after["1200"] - before["1200"]);
+        Assert.Equal(-15m, after["1100"] - before["1100"]);
+        Assert.Equal(40m, after["1300"] - before["1300"]);
+    }
+
     private sealed record Refs(int Currency, int Treasury, int Supplier);
 
     private async Task<Refs> SeedAsync()
