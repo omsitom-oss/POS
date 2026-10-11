@@ -92,6 +92,20 @@ public sealed class InventoryService(DbConnectionFactory factory, TransactionSer
         catch { await tx.RollbackAsync(ct); throw; }
     }
 
+    // A rejected request releases the stock it was holding back and posts nothing.
+    public async Task<InventoryRequestDto?> RejectDisposalAsync(long requestId, int? reviewerId, CancellationToken ct)
+    {
+        await using var db=factory.CreateConnection(); await db.OpenAsync(ct); await using var command=db.CreateCommand();
+        command.CommandText="UPDATE dbo.InventoryRequests SET Status=N'REJECTED',ReviewedBy=@reviewer,ReviewedAt=SYSUTCDATETIME() OUTPUT INSERTED.RequestId,INSERTED.RequestType,INSERTED.ItemId,INSERTED.PurchaseLineId,INSERTED.Quantity,INSERTED.Reason,INSERTED.Status,INSERTED.RequestedBy,INSERTED.CreatedAt,INSERTED.ReviewedBy,INSERTED.ReviewedAt WHERE RequestId=@id AND RequestType=N'INVENTORY_DISPOSAL' AND Status=N'PENDING'";
+        Add(command,"@reviewer",reviewerId,DbType.Int32); Add(command,"@id",requestId,DbType.Int64);
+        await using var reader=await command.ExecuteReaderAsync(ct);
+        if(await reader.ReadAsync(ct)) return new(reader.GetInt64(0),reader.GetString(1),reader.GetInt64(2),reader.IsDBNull(3)?null:reader.GetInt64(3),reader.GetDecimal(4),reader.GetString(5),reader.GetString(6),reader.IsDBNull(7)?null:reader.GetInt32(7),reader.GetDateTime(8),reader.IsDBNull(9)?null:reader.GetInt32(9),reader.IsDBNull(10)?null:reader.GetDateTime(10));
+        await reader.CloseAsync();
+        await using var exists=db.CreateCommand(); exists.CommandText="SELECT 1 FROM dbo.InventoryRequests WHERE RequestId=@id AND RequestType=N'INVENTORY_DISPOSAL'"; Add(exists,"@id",requestId,DbType.Int64);
+        if(await exists.ExecuteScalarAsync(ct) is null) return null;
+        throw new InventoryException("Only pending requests can be rejected.");
+    }
+
     public async Task<int?> GetRequestBranchIdAsync(long requestId, CancellationToken ct)
     {
         await using var db=factory.CreateConnection(); await db.OpenAsync(ct); await using var command=db.CreateCommand(); command.CommandText="SELECT BranchId FROM dbo.InventoryRequests WHERE RequestId=@id"; Add(command,"@id",requestId,DbType.Int64);

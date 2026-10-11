@@ -148,7 +148,7 @@ function App() {
     : section === 'purchase-import'
     ? <ImportShipmentPage locale={locale} purchaseId={purchaseImportId} onBack={() => { setPurchaseImportId(undefined); navigate('purchases') }} />
     : section === 'inventory'
-    ? <InventoryPage locale={locale} branchId={session.branchId} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} userId={session.userId} />
+    ? <InventoryPage locale={locale} branchId={session.branchId} branchName={locale === 'ar' ? session.branchNameAr : session.branchNameEn} userId={session.userId} canApprove={session.permissions.includes('INVENTORY_APPROVE')} />
     : section === 'receipts'
     ? <ReceiptsPage locale={locale} />
     : section === 'expenses'

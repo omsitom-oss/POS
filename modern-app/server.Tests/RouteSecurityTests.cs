@@ -84,7 +84,7 @@ public sealed class RouteSecurityTests(ApiFactory factory, TestAuthApiFactory au
         { "GET", "/api/purchase-returns" }, { "GET", "/api/purchase-returns/invoices/1" }, { "POST", "/api/purchase-returns" }, { "POST", "/api/purchase-returns/1/approve" }, { "POST", "/api/purchase-returns/1/reject" },
         { "GET", "/api/purchases" }, { "GET", "/api/purchases/1" }, { "POST", "/api/purchases" }, { "DELETE", "/api/purchases/1" },
         { "GET", "/api/imports/1" }, { "GET", "/api/imports/payable-accounts" }, { "POST", "/api/imports" }, { "PUT", "/api/imports/1" }, { "POST", "/api/imports/1/costs" }, { "DELETE", "/api/imports/1/costs/1" }, { "POST", "/api/imports/1/receive" }, { "POST", "/api/imports/1/cancel" },
-        { "GET", "/api/inventory" }, { "POST", "/api/inventory/disposals" }, { "POST", "/api/inventory/requests/1/approve" },
+        { "GET", "/api/inventory" }, { "POST", "/api/inventory/disposals" }, { "POST", "/api/inventory/requests/1/approve" }, { "POST", "/api/inventory/requests/1/reject" },
         { "GET", "/api/receipts" }, { "POST", "/api/receipts" }, { "GET", "/api/expenses" }, { "POST", "/api/expenses" },
         { "GET", "/api/transactions/treasury/1" }, { "POST", "/api/transactions" }, { "POST", "/api/treasury-transfers" },
         { "GET", "/api/accounts/chart" }, { "GET", "/api/reports/summary" },

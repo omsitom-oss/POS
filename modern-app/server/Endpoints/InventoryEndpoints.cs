@@ -32,6 +32,13 @@ public static class InventoryEndpoints
             catch (InventoryException ex) { return Results.Problem(ex.Message, statusCode: ex.StatusCode); }
             catch (TransactionException ex) { return Results.Problem(ex.Message, statusCode: ex.StatusCode); }
         }).RequirePermission(PermissionCodes.InventoryApprove);
+        group.MapPost("/requests/{requestId:long}/reject", async (long requestId, ClaimsPrincipal user, InventoryService service, CancellationToken ct) =>
+        {
+            var branch = await service.GetRequestBranchIdAsync(requestId, ct);
+            if (branch is null || !user.CanAccessBranch(branch.Value)) return Results.NotFound();
+            try { var result = await service.RejectDisposalAsync(requestId, user.GetUserId(), ct); return result is null ? Results.NotFound() : Results.Ok(result); }
+            catch (InventoryException ex) { return Results.Problem(ex.Message, statusCode: ex.StatusCode); }
+        }).RequirePermission(PermissionCodes.InventoryApprove);
         return endpoints;
     }
 }
