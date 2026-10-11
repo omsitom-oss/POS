@@ -26,6 +26,8 @@ public sealed class SalesService(DbConnectionFactory factory, TransactionService
         if (!onAccount && request.TreasuryId is not > 0) throw new SalesException("Treasury, currency and at least one item are required.");
         if (request.CurrencyId <= 0 || request.Lines is null || request.Lines.Count == 0) throw new SalesException("Treasury, currency and at least one item are required.");
         if (request.Discount < 0) throw new SalesException("Discount cannot be negative.");
+        // Checked before the totals, so a negative quantity is not reported as a discount problem.
+        if (request.Lines.Any(line => line.ItemId <= 0 || line.Quantity <= 0 || line.UnitPrice < 0)) throw new SalesException("Sale lines must have positive quantities and non-negative prices.");
         await using var db=factory.CreateConnection(); await db.OpenAsync(ct); await using var tx=await db.BeginTransactionAsync(IsolationLevel.Serializable,ct);
         try
         {
