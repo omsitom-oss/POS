@@ -1,3 +1,4 @@
+import { readProblem } from '../../app/http'
 import { useEffect, useState } from "react";
 import { DataTable } from "../../components/DataTable";
 import {
@@ -40,7 +41,7 @@ export function ItemsPage({ locale }: { locale: Locale }) {
     let active = true;
     fetch(`/api/items${showInactive ? "?includeInactive=true" : ""}`)
       .then(async (response) => {
-        if (!response.ok) throw new Error(await response.text());
+        if (!response.ok) throw new Error(await readProblem(response));
         return response.json() as Promise<Item[]>;
       })
       .then((result) => {
@@ -177,7 +178,7 @@ export function ItemsPage({ locale }: { locale: Locale }) {
           body: JSON.stringify(payload),
         },
       );
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) throw new Error(await readProblem(response));
       setModal(false);
       await reload();
     } catch (reason) {

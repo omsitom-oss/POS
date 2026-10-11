@@ -1,3 +1,4 @@
+import { readProblem } from '../../app/http'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { DataTable, type TableColumn } from '../../components/DataTable'
 import { Button, EmptyState, ErrorState, FormField, FormSection, IconButton, LoadingState, Modal, Select, StatusBadge, StatusToggle, TextInput } from '../../components/shared'
@@ -351,7 +352,7 @@ function EditPartner({ locale, customer, onCancel, onSaved }: { locale: Locale; 
     setSaving(true); setError('')
     try {
       const response = await fetch(`/api/partners/by-public/${customer.publicId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, status: active ? 'ACTIVE' : 'INACTIVE' }) })
-      if (!response.ok) throw new Error(await response.text())
+      if (!response.ok) throw new Error(await readProblem(response))
       onSaved(await response.json() as CustomerDetails)
     } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر حفظ الشريك.' : 'Could not save partner.')) } finally { setSaving(false) }
   }

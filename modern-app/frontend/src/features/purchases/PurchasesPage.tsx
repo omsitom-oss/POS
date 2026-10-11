@@ -1,3 +1,4 @@
+import { readProblem } from '../../app/http'
 import { useCallback, useState } from "react";
 import {
   Button,
@@ -109,14 +110,14 @@ export function PurchasesPage({ locale, onImport }: { locale: Locale; onImport?:
   async function confirmDraft(purchaseId: number) {
     if (!window.confirm(ar ? "تأكيد الفاتورة سيؤثر على المخزون والحسابات. هل تريد المتابعة؟" : "Confirming this invoice will update stock and accounts. Continue?")) return;
     const response = await fetch(`/api/purchases/${purchaseId}/confirm`, { method: "POST" });
-    if (!response.ok) { setError(await response.text()); return; }
+    if (!response.ok) { setError(await readProblem(response)); return; }
     await load();
   }
   // An import draft is cancelled with reversing entries and kept; a local draft has no entries and is deleted.
   async function cancelDraft(purchaseId: number, isImport: boolean) {
     if (!window.confirm(isImport ? (ar ? "سيتم إلغاء الشحنة وعكس قيودها. هل تريد المتابعة؟" : "Cancel this shipment and reverse its entries?") : (ar ? "هل تريد إلغاء وحذف الفاتورة المبدئية؟" : "Cancel and delete this draft invoice?"))) return;
     const response = await fetch(isImport ? `/api/imports/${purchaseId}/cancel` : `/api/purchases/${purchaseId}`, { method: isImport ? "POST" : "DELETE" });
-    if (!response.ok) { setError(await response.text()); return; }
+    if (!response.ok) { setError(await readProblem(response)); return; }
     await load();
   }
   if (editing)

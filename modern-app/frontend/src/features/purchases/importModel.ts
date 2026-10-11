@@ -138,12 +138,7 @@ export function allocate(weights: Array<{ value: number; quantity: number }>, co
   return result
 }
 
-export async function readProblem(response: Response, fallback: string) {
-  try {
-    const text = await response.text()
-    try { const body = JSON.parse(text) as { detail?: string; title?: string }; return body.detail ?? body.title ?? fallback } catch { return text || fallback }
-  } catch { return fallback }
-}
+export { readProblem } from '../../app/http'
 
 export function lineFromSaved(line: ImportLine): DraftLine {
   return {

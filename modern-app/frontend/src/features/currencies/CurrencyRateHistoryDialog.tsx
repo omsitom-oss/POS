@@ -1,3 +1,4 @@
+import { readProblem } from '../../app/http'
 import { useCallback, useState } from 'react'
 import { Button, EmptyState, ErrorState, LoadingState, Modal, TableFooter } from '../../components/shared'
 import { useLoadEffect } from '../../components/useLoadEffect'
@@ -16,7 +17,7 @@ export function CurrencyRateHistoryDialog({ open, locale, currency, baseSymbol, 
       const query = new URLSearchParams(); if (from) query.set('from', from); if (to) query.set('to', to)
       const suffix = query.toString() ? `?${query.toString()}` : ''
       const response = await fetch(`/api/currencies/${currency.currencyId}/rates/history${suffix}`)
-      if (!response.ok) throw new Error(await response.text() || `Request failed (${response.status})`)
+      if (!response.ok) throw new Error(await readProblem(response))
       setRows(await response.json() as HistoryEntry[])
     } catch (reason) { setError(reason instanceof Error ? reason.message : (ar ? 'تعذر تحميل سجل الأسعار.' : 'Could not load rate history.')) } finally { setLoading(false) }
   }, [currency, ar])

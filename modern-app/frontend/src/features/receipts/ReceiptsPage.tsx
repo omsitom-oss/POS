@@ -1,3 +1,4 @@
+import { readProblem } from '../../app/http'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, DateInput, EmptyState, ErrorState, FormField, LoadingState, Modal, SearchInput, TableFooter, TextInput } from '../../components/shared'
 import { useLoadEffect } from '../../components/useLoadEffect'
@@ -142,7 +143,7 @@ export function ReceiptsPage({ locale, variant = 'receipts' }: { locale: Locale;
     setSaving(true); setError('')
     try {
       const response = await fetch('/api/receipts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: draft.type, partnerId: Number(draft.partnerId), treasuryId: Number(draft.treasuryId), partnerCurrencyId: Number(draft.partnerCurrencyId), amount: Number(draft.amount), partnerAmount: Number(draft.partnerAmount), exchangeRate: Number(draft.exchangeRate), reason: draft.reason.trim() || null, description: draft.description.trim() || null, receiptDate: draft.receiptDate }) })
-      if (!response.ok) throw new Error(await response.text())
+      if (!response.ok) throw new Error(await readProblem(response))
       setModal(false); await load()
     } catch (e) { setError(e instanceof Error ? e.message : (ar ? 'تعذر حفظ الإيصال.' : 'Could not save receipt.')) } finally { setSaving(false) }
   }
