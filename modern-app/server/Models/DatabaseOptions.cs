@@ -6,6 +6,9 @@ public sealed class DatabaseOptions
 
     public string Provider { get; init; } = "SQLite";
     public string SqliteConnectionString { get; init; } = "Data Source=data/elite-pos.db";
+
+    // The only database name --migrate-pos writes to. A test copy such as POS_Test sets it in appsettings.Development.json.
+    public string PosDatabaseName { get; init; } = "POS";
 }
 
 public sealed record DatabaseStatus(string Provider, bool Connected, string Message);

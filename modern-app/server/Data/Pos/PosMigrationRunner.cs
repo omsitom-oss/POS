@@ -5,7 +5,7 @@ using Microsoft.Data.SqlClient;
 
 namespace ElitePos.LocalService.Data.Pos;
 
-public sealed class PosMigrationRunner(DbConnectionFactory factory)
+public sealed class PosMigrationRunner(DbConnectionFactory factory, string expectedDatabaseName = "POS")
 {
     public async Task<int> ApplyAsync(CancellationToken cancellationToken = default)
     {
@@ -18,8 +18,8 @@ public sealed class PosMigrationRunner(DbConnectionFactory factory)
         {
             identity.CommandText = "SELECT DB_NAME()";
             var databaseName = (string?)await identity.ExecuteScalarAsync(cancellationToken);
-            if (!string.Equals(databaseName, "POS", StringComparison.Ordinal))
-                throw new InvalidOperationException($"Refusing customer POS migration because the connected database is '{databaseName}'. Expected 'POS'.");
+            if (!string.Equals(databaseName, expectedDatabaseName, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Refusing customer POS migration because the connected database is '{databaseName}'. Expected '{expectedDatabaseName}'.");
         }
 
         var existing = new List<string>();

@@ -31,7 +31,7 @@ if (args.Contains("--migrate-pos", StringComparer.OrdinalIgnoreCase))
     var posOptions = builder.Configuration.GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>() ?? new DatabaseOptions();
     try
     {
-        var version = await new PosMigrationRunner(new DbConnectionFactory(posOptions, builder.Configuration, builder.Environment)).ApplyAsync();
+        var version = await new PosMigrationRunner(new DbConnectionFactory(posOptions, builder.Configuration, builder.Environment), posOptions.PosDatabaseName).ApplyAsync();
         Console.WriteLine($"POS customer schema is at version {version}.");
         return;
     }
