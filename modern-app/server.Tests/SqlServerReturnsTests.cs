@@ -292,6 +292,17 @@ public sealed class SqlServerReturnsTests(SqlServerApiFixture fixture) : IClassF
         Assert.Equal(4m, await Sum(returnNo, "1300", "Debit"));
         Assert.Equal(4m, await Sum(returnNo, "5050", "Credit"));
 
+        // Sales and returns from before cost-of-goods posting get their lines back from the backfill, once.
+        await fixture.Database.ExecuteAsync($"DELETE FROM dbo.Transactions WHERE RefNo IN (N'{saleNo}',N'{returnNo}') AND AccountId IN (N'5050',N'1300')", "old style", Ct);
+        var backfill = typeof(ElitePos.LocalService.Data.Pos.PosMigrationRunner).Assembly.GetManifestResourceNames().Single(name => name.EndsWith("_BackfillCostOfGoodsSold.sql", StringComparison.Ordinal));
+        await fixture.Database.ExecuteAsync(MigrationSql.Read(backfill), "backfill", Ct);
+        await fixture.Database.ExecuteAsync(MigrationSql.Read(backfill), "backfill again", Ct);
+        Assert.Equal(12m, await Sum(saleNo, "5050", "Debit"));
+        Assert.Equal(12m, await Sum(saleNo, "1300", "Credit"));
+        Assert.Equal(4m, await Sum(returnNo, "1300", "Debit"));
+        Assert.Equal(4m, await Sum(returnNo, "5050", "Credit"));
+        Assert.Equal(0m, await fixture.Database.ScalarAsync<decimal>($"SELECT SUM(Debit-Credit) FROM dbo.Transactions WHERE RefNo=N'{saleNo}'", Ct));
+
         // Expenses cannot be typed against the cost-of-goods account.
         var expense = await Admin.PostAsJsonAsync("/api/expenses", new { expenseAccountId = "5050", treasuryId = refs.Treasury, amount = 1m, branchId = fixture.BranchA }, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, expense.StatusCode);
